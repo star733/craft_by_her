@@ -198,15 +198,27 @@ export default function Wishlist() {
                   <div style={actionButtonsStyle}>
                     <button
                       onClick={() => navigate(`/products/${product._id}`)}
-                      style={viewButtonStyle}
+                      className="bk-btn bk-btn--icon"
+                      title="View"
+                      aria-label="View"
                     >
-                      View Details
+                      <FiEye size={16} />
                     </button>
                     <button
                       onClick={() => addToCart(product)}
-                      style={addToCartButtonStyle}
+                      className="bk-btn bk-btn--icon"
+                      title="Add to cart"
+                      aria-label="Add to cart"
                     >
-                      Add to Cart
+                      🛒
+                    </button>
+                    <button
+                      onClick={() => removeFromWishlist(product._id)}
+                      className="bk-btn bk-btn--icon bk-btn--danger"
+                      title="Remove"
+                      aria-label="Remove"
+                    >
+                      <FiTrash2 size={16} />
                     </button>
                   </div>
                 </div>

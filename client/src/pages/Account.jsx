@@ -474,7 +474,7 @@ function CartSection({ cart, onRefresh }) {
               
               <div style={{ display: "flex", gap: "8px" }}>
                 <button 
-                  className="bk-btn bk-btn--pill bk-btn--ghost"
+                  className="bk-btn bk-btn--icon"
                   onClick={() => {
                     const pid = (item && item.productId && item.productId._id) ? item.productId._id : item.productId;
                     if (!pid) {
@@ -483,16 +483,18 @@ function CartSection({ cart, onRefresh }) {
                     }
                     navigate(`/products/${pid}`);
                   }}
+                  title="View"
+                  aria-label="View"
                 >
                   <FiEye size={16} />
-                  View
                 </button>
                 <button 
-                  className="bk-btn bk-btn--pill bk-btn--danger"
+                  className="bk-btn bk-btn--icon bk-btn--danger"
                   onClick={() => removeFromCart(item._id)}
+                  title="Remove"
+                  aria-label="Remove"
                 >
                   <FiTrash2 size={16} />
-                  Remove
                 </button>
               </div>
             </div>

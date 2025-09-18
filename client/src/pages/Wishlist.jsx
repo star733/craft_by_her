@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { FiEye, FiTrash2, FiShoppingCart } from "react-icons/fi";
 import { auth } from "../firebase";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -210,7 +211,7 @@ export default function Wishlist() {
                       title="Add to cart"
                       aria-label="Add to cart"
                     >
-                      🛒
+                      <FiShoppingCart size={16} />
                     </button>
                     <button
                       onClick={() => removeFromWishlist(product._id)}

@@ -303,7 +303,7 @@ export default function ProductDetails() {
           </div>
 
           {/* Stock Status - Only show when out of stock */}
-          {product.stock <= 0 && (
+          {(product.stock === 0 || product.stock === '0' || !product.stock || product.stock <= 0) && (
             <div style={stockContainerStyle}>
               <span style={stockLabelStyle}>Stock Status:</span>
               <span style={{
@@ -312,6 +312,13 @@ export default function ProductDetails() {
               }}>
                 Out of Stock
               </span>
+            </div>
+          )}
+          
+          {/* Debug: Always show stock value for debugging */}
+          {process.env.NODE_ENV === 'development' && (
+            <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
+              Debug - Stock: {product.stock} (Type: {typeof product.stock})
             </div>
           )}
 

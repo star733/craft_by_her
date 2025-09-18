@@ -92,19 +92,31 @@ router.post("/add", verify, async (req, res) => {
     
     console.log("✅ Product found:", product.title);
     
-    // Verify variant exists in product
+    // Verify/resolve variant from product with tolerant matching
     let productVariant = null;
+    const toNormWeight = (w) => String(w || "").trim().toLowerCase();
+    const toNormPrice = (p) => Number(p);
     if (product.variants && product.variants.length > 0) {
-      // For products with variants, find matching variant
-      productVariant = product.variants.find(v => 
-        v.weight === variant.weight && 
-        String(v.price) === String(variant.price)
+      // 1) exact match on weight + price (normalized)
+      productVariant = product.variants.find((v) =>
+        toNormWeight(v.weight) === toNormWeight(variant.weight) &&
+        toNormPrice(v.price) === toNormPrice(variant.price)
       );
+      // 2) fallback: match on weight only
+      if (!productVariant) {
+        productVariant = product.variants.find((v) =>
+          toNormWeight(v.weight) === toNormWeight(variant.weight)
+        );
+      }
+      // 3) ultimate fallback: first available variant
+      if (!productVariant) {
+        productVariant = product.variants[0];
+      }
     } else if (product.price) {
       // For products without variants, create a default variant
-      productVariant = { 
-        weight: variant.weight || "1 piece", 
-        price: product.price 
+      productVariant = {
+        weight: variant.weight || "1 piece",
+        price: product.price,
       };
     }
     
@@ -139,8 +151,8 @@ router.post("/add", verify, async (req, res) => {
     const normalizePrice = (p) => Number(p);
     const incoming = {
       productId: productId,
-      weight: normalizeWeight(variant.weight),
-      price: normalizePrice(variant.price),
+      weight: normalizeWeight(productVariant.weight),
+      price: normalizePrice(productVariant.price),
     };
 
     // Check if an equivalent line item already exists (product + weight + price)
@@ -174,10 +186,10 @@ router.post("/add", verify, async (req, res) => {
         title: product.title, // Add product title
         image: product.image, // Add product image
         variant: {
-          weight: variant.weight,
-          price: normalizePrice(variant.price) // Ensure price is a number
+          weight: productVariant.weight,
+          price: normalizePrice(productVariant.price) // Ensure price is a number
         },
-        quantity
+        quantity: Number(quantity) || 1
       });
     }
     

@@ -1,6 +1,6 @@
 // src/pages/Login.jsx
 import React, { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
@@ -24,6 +24,8 @@ export default function Login() {
   const [errors, setErrors] = useState({ email: "", password: "" });
   const [touched, setTouched] = useState({ email: false, password: false });
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromPath = location.state?.from?.pathname || null;
 
   // 🔹 Helper to always get fresh Firebase token
   const getFreshToken = async () => {
@@ -80,7 +82,7 @@ export default function Login() {
             hideProgressBar: true,
             autoClose: 1000,
           });
-          navigate("/products");
+          navigate(fromPath || "/products");
         }
       } catch (err) {
         console.error("Redirect sign-in error", err);
@@ -155,7 +157,7 @@ const { user: profile } = await res.json();
       if (profile?.role === "admin") {
         navigate("/admin");
       } else {
-        navigate("/account");
+        navigate(fromPath || "/account");
       }
 
       // Sync profile (non-blocking)
@@ -217,7 +219,7 @@ toast.success("Login successful!", { autoClose: 1200 });
       if (profile?.role === "admin") {
         navigate("/admin");
       } else {
-        navigate("/account");
+        navigate(fromPath || "/account");
       }
     } catch (err) {
       console.error("Google login error:", err);
@@ -242,6 +244,11 @@ toast.success("Login successful!", { autoClose: 1200 });
 
         <div className="bk-auth-form">
           <h2 className="bk-auth-title">Sign In</h2>
+          {fromPath && (
+            <div className="bk-alert bk-alert--info" style={{marginBottom: 12}}>
+              Please login to view your {fromPath.replace("/", "")}.
+            </div>
+          )}
 
           <form onSubmit={handleEmailLogin} autoComplete="on">
             {/* Email */}

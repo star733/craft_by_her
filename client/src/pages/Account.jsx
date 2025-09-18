@@ -526,6 +526,35 @@ function CartSection({ cart, onRefresh }) {
 function WishlistSection({ wishlist, onRefresh }) {
   const navigate = useNavigate();
   
+  const addToCart = async (product) => {
+    try {
+      if (!product?.variants || product.variants.length === 0) {
+        toast.error("No variants available for this product");
+        return;
+      }
+      const token = await auth.currentUser.getIdToken();
+      const response = await fetch("http://localhost:5000/api/cart/add", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          productId: product._id,
+          variant: product.variants[0],
+          quantity: 1,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to add to cart");
+      }
+      toast.success("Added to cart");
+    } catch (err) {
+      console.error("addToCart error:", err);
+      toast.error("Failed to add to cart");
+    }
+  };
+  
   const removeFromWishlist = async (productId) => {
     try {
       const token = await auth.currentUser.getIdToken();
@@ -579,6 +608,12 @@ function WishlistSection({ wishlist, onRefresh }) {
                     alt={product.title}
                     style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "8px" }}
                   />
+                ) : product.img ? (
+                  <img
+                    src={`/images/products/${product.img}`}
+                    alt={product.title}
+                    style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "8px" }}
+                  />
                 ) : (
                   <span style={{ fontSize: "12px", color: "#999" }}>No Image</span>
                 )}
@@ -591,18 +626,28 @@ function WishlistSection({ wishlist, onRefresh }) {
               
               <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
                 <button 
-                  className="bk-btn bk-btn--pill bk-btn--ghost"
+                  className="bk-btn bk-btn--icon"
                   onClick={() => navigate(`/products/${product._id}`)}
+                  title="View"
+                  aria-label="View"
                 >
                   <FiEye size={16} />
-                  View
                 </button>
                 <button 
-                  className="bk-btn bk-btn--pill bk-btn--danger"
+                  className="bk-btn bk-btn--icon"
+                  onClick={() => addToCart(product)}
+                  title="Add to cart"
+                  aria-label="Add to cart"
+                >
+                  <FiShoppingCart size={16} />
+                </button>
+                <button 
+                  className="bk-btn bk-btn--icon bk-btn--danger"
                   onClick={() => removeFromWishlist(product._id)}
+                  title="Remove"
+                  aria-label="Remove"
                 >
                   <FiTrash2 size={16} />
-                  Remove
                 </button>
               </div>
             </div>

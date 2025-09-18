@@ -94,20 +94,38 @@ router.post("/add", verify, async (req, res) => {
       console.log("Found existing cart with", cart.items.length, "items");
     }
     
-    // Check if item already exists
-    const existingItemIndex = cart.items.findIndex((item) => {
-      const sameProduct = item.productId.toString() === productId;
-      const sameWeight = item.variant?.weight === variant.weight;
-      const samePrice = String(item.variant?.price) === String(variant.price);
+    // Normalizers to ensure stable comparisons
+    const normalizeWeight = (w) => String(w || "").trim().toLowerCase();
+    const normalizePrice = (p) => Number(p);
+    const incoming = {
+      productId: productId,
+      weight: normalizeWeight(variant.weight),
+      price: normalizePrice(variant.price),
+    };
+
+    // Check if an equivalent line item already exists (product + weight + price)
+    let existingItemIndex = cart.items.findIndex((item) => {
+      const sameProduct = item.productId.toString() === incoming.productId;
+      const sameWeight = normalizeWeight(item.variant?.weight) === incoming.weight;
+      const samePrice = normalizePrice(item.variant?.price) === incoming.price;
       return sameProduct && sameWeight && samePrice;
     });
+
+    // Fallback: if price formatting differs, match by product + weight only
+    if (existingItemIndex < 0) {
+      existingItemIndex = cart.items.findIndex((item) => {
+        const sameProduct = item.productId.toString() === incoming.productId;
+        const sameWeight = normalizeWeight(item.variant?.weight) === incoming.weight;
+        return sameProduct && sameWeight;
+      });
+    }
     
     if (existingItemIndex >= 0) {
       console.log("Updating existing item quantity");
       // Update quantity
       cart.items[existingItemIndex].quantity += quantity;
       // Ensure price is a number
-      cart.items[existingItemIndex].variant.price = Number(cart.items[existingItemIndex].variant.price);
+      cart.items[existingItemIndex].variant.price = normalizePrice(cart.items[existingItemIndex].variant.price);
     } else {
       console.log("Adding new item to cart");
       // Add new item with proper data types
@@ -117,7 +135,7 @@ router.post("/add", verify, async (req, res) => {
         image: product.image, // Add product image
         variant: {
           weight: variant.weight,
-          price: Number(variant.price) // Ensure price is a number
+          price: normalizePrice(variant.price) // Ensure price is a number
         },
         quantity
       });

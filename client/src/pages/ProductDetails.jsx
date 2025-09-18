@@ -135,6 +135,9 @@ export default function ProductDetails() {
       const result = await response.json();
       console.log("Cart success response:", result);
       toast.success("Added to cart successfully!");
+      
+      // Refresh product data to get updated stock
+      await fetchProduct();
     } catch (error) {
       console.error("Error adding to cart:", error);
       toast.error(`Failed to add to cart: ${error.message}`);

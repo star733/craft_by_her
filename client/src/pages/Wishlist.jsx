@@ -106,6 +106,9 @@ export default function Wishlist() {
       }
 
       toast.success("Added to cart successfully!");
+      
+      // Refresh wishlist data to get updated stock info
+      await fetchWishlist();
     } catch (error) {
       console.error("Error adding to cart:", error);
       toast.error(error.message || "Failed to add to cart");

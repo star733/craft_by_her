@@ -590,6 +590,9 @@ function WishlistSection({ wishlist, onRefresh }) {
         throw new Error(errorData.error || "Failed to add to cart");
       }
       toast.success("Added to cart");
+      
+      // Refresh wishlist data to get updated stock info
+      onRefresh();
     } catch (err) {
       console.error("addToCart error:", err);
       toast.error(err.message || "Failed to add to cart");

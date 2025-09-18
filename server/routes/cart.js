@@ -95,11 +95,12 @@ router.post("/add", verify, async (req, res) => {
     }
     
     // Check if item already exists
-    const existingItemIndex = cart.items.findIndex(item => 
-      item.productId.toString() === productId && 
-      item.variant.weight === variant.weight &&
-      item.variant.price === variant.price
-    );
+    const existingItemIndex = cart.items.findIndex((item) => {
+      const sameProduct = item.productId.toString() === productId;
+      const sameWeight = item.variant?.weight === variant.weight;
+      const samePrice = String(item.variant?.price) === String(variant.price);
+      return sameProduct && sameWeight && samePrice;
+    });
     
     if (existingItemIndex >= 0) {
       console.log("Updating existing item quantity");

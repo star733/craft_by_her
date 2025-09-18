@@ -20,6 +20,8 @@ import UserManagement from "./pages/UserManagement";
 import ProductDetails from "./pages/ProductDetails";
 import Cart from "./pages/Cart";
 import Wishlist from "./pages/Wishlist";
+import CartPrompt from "./pages/CartPrompt";
+import WishlistPrompt from "./pages/WishlistPrompt";
 import Checkout from "./pages/Checkout";
 import Payment from "./pages/Payment";
 import OrderConfirmation from "./pages/OrderConfirmation";
@@ -47,8 +49,10 @@ export default function App() {
           <Route path="/contact" element={<Contact />} />
           <Route path="/products" element={<Products />} />
           <Route path="/products/:id" element={<ProductDetails />} />
-          <Route path="/cart" element={<RequireAuth><Cart /></RequireAuth>} />
-          <Route path="/wishlist" element={<RequireAuth><Wishlist /></RequireAuth>} />
+          <Route path="/cart" element={<CartPrompt />} />
+          <Route path="/wishlist" element={<WishlistPrompt />} />
+          <Route path="/cart/authenticated" element={<RequireAuth><Cart /></RequireAuth>} />
+          <Route path="/wishlist/authenticated" element={<RequireAuth><Wishlist /></RequireAuth>} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/payment" element={<Payment />} />
           <Route path="/order-confirmation" element={<OrderConfirmation />} />

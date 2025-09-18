@@ -19,11 +19,11 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const handleCartClick = () => {
-    navigate("/cart");
+    navigate(user ? "/cart/authenticated" : "/cart");
   };
 
   const handleWishlistClick = () => {
-    navigate("/wishlist");
+    navigate(user ? "/wishlist/authenticated" : "/wishlist");
   };
 
   return (

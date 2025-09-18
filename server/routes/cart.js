@@ -74,16 +74,22 @@ router.post("/add", verify, async (req, res) => {
     console.log("Quantity:", quantity);
     console.log("User UID:", req.user.uid);
     
-    if (!productId || !variant) {
-      console.log("❌ Missing productId or variant");
-      return res.status(400).json({ error: "Product ID and variant are required" });
+    if (!productId) {
+      console.log("❌ Missing productId");
+      return res.status(400).json({ error: "Product ID is required" });
     }
     
     // Verify product exists using direct MongoDB access
     const db = mongoose.connection.db;
-    const product = await db.collection("products").findOne({ 
-      _id: new mongoose.Types.ObjectId(productId) 
-    });
+    let mongoId = null;
+    try {
+      if (mongoose.Types.ObjectId.isValid(productId)) {
+        mongoId = new mongoose.Types.ObjectId(productId);
+      }
+    } catch {}
+    const product = mongoId
+      ? await db.collection("products").findOne({ _id: mongoId })
+      : await db.collection("products").findOne({ _id: { $exists: false } });
     
     if (!product) {
       console.log("❌ Product not found");
@@ -98,12 +104,14 @@ router.post("/add", verify, async (req, res) => {
     const toNormPrice = (p) => Number(p);
     if (product.variants && product.variants.length > 0) {
       // 1) exact match on weight + price (normalized)
-      productVariant = product.variants.find((v) =>
-        toNormWeight(v.weight) === toNormWeight(variant.weight) &&
-        toNormPrice(v.price) === toNormPrice(variant.price)
-      );
+      if (variant) {
+        productVariant = product.variants.find((v) =>
+          toNormWeight(v.weight) === toNormWeight(variant.weight) &&
+          toNormPrice(v.price) === toNormPrice(variant.price)
+        );
+      }
       // 2) fallback: match on weight only
-      if (!productVariant) {
+      if (!productVariant && variant?.weight) {
         productVariant = product.variants.find((v) =>
           toNormWeight(v.weight) === toNormWeight(variant.weight)
         );
@@ -115,7 +123,7 @@ router.post("/add", verify, async (req, res) => {
     } else if (product.price) {
       // For products without variants, create a default variant
       productVariant = {
-        weight: variant.weight || "1 piece",
+        weight: variant?.weight || "1 piece",
         price: product.price,
       };
     }
@@ -128,7 +136,7 @@ router.post("/add", verify, async (req, res) => {
       if (product.variants && product.variants.length > 0) {
         console.log("First product variant types - weight:", typeof product.variants[0].weight, "price:", typeof product.variants[0].price);
       }
-      return res.status(400).json({ error: "Invalid variant" });
+      return res.status(400).json({ error: "Invalid or missing variant for this product" });
     }
     
     console.log("✅ Variant validated:", productVariant);

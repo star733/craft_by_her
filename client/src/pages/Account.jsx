@@ -667,14 +667,6 @@ function WishlistSection({ wishlist, onRefresh }) {
                   <FiEye size={16} />
                 </button>
                 <button 
-                  className="bk-btn bk-btn--icon"
-                  onClick={() => addToCart(product)}
-                  title="Add to cart"
-                  aria-label="Add to cart"
-                >
-                  <FiShoppingCart size={16} />
-                </button>
-                <button 
                   className="bk-btn bk-btn--icon bk-btn--danger"
                   onClick={() => removeFromWishlist(product._id)}
                   title="Remove"

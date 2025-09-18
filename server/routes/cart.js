@@ -141,6 +141,25 @@ router.post("/add", verify, async (req, res) => {
       });
     }
     
+    // Consolidate duplicate line items (same product + weight + price)
+    const groupKey = (it) => {
+      const pid = it.productId.toString();
+      const w = String(it.variant?.weight || "").trim().toLowerCase();
+      const p = Number(it.variant?.price);
+      return `${pid}__${w}__${p}`;
+    };
+
+    const grouped = new Map();
+    for (const it of cart.items) {
+      const key = groupKey(it);
+      if (!grouped.has(key)) {
+        grouped.set(key, { ...it.toObject(), quantity: Number(it.quantity || 1) });
+      } else {
+        grouped.get(key).quantity += Number(it.quantity || 1);
+      }
+    }
+    cart.items = Array.from(grouped.values());
+
     console.log("Saving cart...");
     await cart.save();
     console.log("✅ Cart saved successfully");

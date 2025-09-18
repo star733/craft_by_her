@@ -8,6 +8,12 @@ const productSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.Mixed, // Allow both string and ObjectId
       required: true,
     },
+    stock: { 
+      type: Number, 
+      required: true, 
+      min: 0,
+      default: 0 
+    },
     variants: [
       {
         weight: { type: String, required: true }, // e.g. "100g"

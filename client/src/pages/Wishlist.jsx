@@ -77,6 +77,12 @@ export default function Wishlist() {
       return;
     }
 
+    // Check stock before adding
+    if (!product.stock || product.stock <= 0) {
+      toast.error("This product is currently out of stock");
+      return;
+    }
+
     try {
       const user = auth.currentUser;
       const token = await user.getIdToken();
@@ -95,13 +101,14 @@ export default function Wishlist() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to add to cart");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to add to cart");
       }
 
       toast.success("Added to cart successfully!");
     } catch (error) {
       console.error("Error adding to cart:", error);
-      toast.error("Failed to add to cart");
+      toast.error(error.message || "Failed to add to cart");
     }
   };
 
@@ -210,6 +217,11 @@ export default function Wishlist() {
                       className="bk-btn bk-btn--icon"
                       title="Add to cart"
                       aria-label="Add to cart"
+                      disabled={!product.stock || product.stock <= 0}
+                      style={{
+                        opacity: (!product.stock || product.stock <= 0) ? 0.5 : 1,
+                        cursor: (!product.stock || product.stock <= 0) ? 'not-allowed' : 'pointer'
+                      }}
                     >
                       <FiShoppingCart size={16} />
                     </button>

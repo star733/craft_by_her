@@ -309,6 +309,17 @@ export default function ProductDetails() {
             <span style={categoryValueStyle}>{product.category?.name || product.category || "Uncategorized"}</span>
           </div>
 
+          {/* Stock Status */}
+          <div style={stockContainerStyle}>
+            <span style={stockLabelStyle}>Stock Status:</span>
+            <span style={{
+              ...stockValueStyle,
+              color: product.stock > 0 ? '#22c55e' : '#dc3545'
+            }}>
+              {product.stock > 0 ? `In Stock (${product.stock} available)` : 'Out of Stock'}
+            </span>
+          </div>
+
           {/* Variants */}
           <div style={variantsContainerStyle}>
             <h3 style={variantsTitleStyle}>Available Options:</h3>
@@ -378,13 +389,13 @@ export default function ProductDetails() {
           <div style={actionsContainerStyle}>
             <button
               onClick={handleAddToCart}
-              disabled={!selectedVariant || addingToCart}
+              disabled={!selectedVariant || addingToCart || product.stock <= 0}
               style={{
                 ...buttonPrimary,
-                ...(addingToCart ? buttonDisabled : {}),
+                ...(addingToCart || product.stock <= 0 ? buttonDisabled : {}),
               }}
             >
-              {addingToCart ? "Adding..." : "🛒 Add to Cart"}
+              {addingToCart ? "Adding..." : product.stock <= 0 ? "Out of Stock" : "🛒 Add to Cart"}
             </button>
 
             <button
@@ -529,6 +540,26 @@ const categoryValueStyle = {
   background: "#f0f0f0",
   padding: "4px 12px",
   borderRadius: "20px",
+};
+
+const stockContainerStyle = {
+  display: "flex",
+  alignItems: "center",
+  gap: "8px",
+};
+
+const stockLabelStyle = {
+  fontSize: "14px",
+  color: "#666",
+  fontWeight: "500",
+};
+
+const stockValueStyle = {
+  fontSize: "16px",
+  fontWeight: "600",
+  padding: "4px 12px",
+  borderRadius: "20px",
+  background: "#f0f0f0",
 };
 
 const variantsContainerStyle = {

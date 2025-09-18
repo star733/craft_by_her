@@ -565,6 +565,13 @@ function WishlistSection({ wishlist, onRefresh }) {
         toast.error("No variants available for this product");
         return;
       }
+      
+      // Check stock before adding
+      if (!product.stock || product.stock <= 0) {
+        toast.error("This product is currently out of stock");
+        return;
+      }
+      
       const token = await auth.currentUser.getIdToken();
       const response = await fetch("http://localhost:5000/api/cart/add", {
         method: "POST",
@@ -579,12 +586,13 @@ function WishlistSection({ wishlist, onRefresh }) {
         }),
       });
       if (!response.ok) {
-        throw new Error("Failed to add to cart");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to add to cart");
       }
       toast.success("Added to cart");
     } catch (err) {
       console.error("addToCart error:", err);
-      toast.error("Failed to add to cart");
+      toast.error(err.message || "Failed to add to cart");
     }
   };
   

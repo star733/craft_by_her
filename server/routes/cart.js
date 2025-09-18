@@ -121,6 +121,13 @@ router.post("/add", verify, async (req, res) => {
     }
     
     console.log("✅ Product found:", product.title);
+    console.log("Product stock:", product.stock);
+    
+    // Check stock availability
+    if (!product.stock || product.stock <= 0) {
+      console.log("❌ Product out of stock");
+      return res.status(400).json({ error: "This product is currently out of stock" });
+    }
     
     // Verify/resolve variant from product with tolerant matching
     let productVariant = null;

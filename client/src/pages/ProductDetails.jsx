@@ -34,6 +34,8 @@ export default function ProductDetails() {
       }
       const data = await response.json();
       console.log("Product data:", data);
+      console.log("Product stock:", data.stock);
+      console.log("Product stock type:", typeof data.stock);
       setProduct(data);
       
       // Set first variant as default if variants exist, otherwise use price
@@ -89,6 +91,9 @@ export default function ProductDetails() {
     console.log("Selected variant:", selectedVariant);
     console.log("Product:", product);
     console.log("Product ID:", id);
+    console.log("Product stock:", product?.stock);
+    console.log("Product stock type:", typeof product?.stock);
+    console.log("Stock check result:", product?.stock <= 0);
     console.log("Quantity:", quantity);
     
     if (!auth.currentUser) {
@@ -101,6 +106,13 @@ export default function ProductDetails() {
     if (!selectedVariant) {
       console.log("❌ No selected variant");
       toast.error("Please select a variant");
+      return;
+    }
+
+    // Check stock before proceeding
+    if (!product.stock || product.stock <= 0) {
+      console.log("❌ Product out of stock - stock:", product.stock);
+      toast.error("This product is currently out of stock");
       return;
     }
 

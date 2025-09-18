@@ -8,14 +8,34 @@ const Product = require("../models/Product");
 // ✅ Get user's cart
 router.get("/", verify, async (req, res) => {
   try {
-    const cart = await Cart.findOne({ userId: req.user.uid })
-      .populate("items.productId", "title image variants")
-      .lean();
-    
-    if (!cart) {
+    let cartDoc = await Cart.findOne({ userId: req.user.uid });
+
+    if (!cartDoc) {
       return res.json({ items: [], totalAmount: 0 });
     }
-    
+
+    // Consolidate duplicates if any exist
+    const keyFor = (it) => `${it.productId.toString()}__${String(it.variant?.weight || "").trim().toLowerCase()}__${Number(it.variant?.price)}`;
+    const grouped = new Map();
+    let mutated = false;
+    for (const it of cartDoc.items) {
+      const k = keyFor(it);
+      if (!grouped.has(k)) {
+        grouped.set(k, { ...it.toObject(), quantity: Number(it.quantity || 1) });
+      } else {
+        grouped.get(k).quantity += Number(it.quantity || 1);
+        mutated = true;
+      }
+    }
+    if (mutated) {
+      cartDoc.items = Array.from(grouped.values());
+      await cartDoc.save();
+    }
+
+    const cart = await Cart.findById(cartDoc._id)
+      .populate("items.productId", "title image variants")
+      .lean();
+
     res.json(cart);
   } catch (err) {
     console.error("Error fetching cart:", err);

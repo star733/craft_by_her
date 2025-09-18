@@ -129,6 +129,14 @@ router.post("/add", verify, async (req, res) => {
       return res.status(400).json({ error: "This product is currently out of stock" });
     }
     
+    // Check if requested quantity exceeds available stock
+    if (product.stock < quantity) {
+      console.log("❌ Insufficient stock. Available:", product.stock, "Requested:", quantity);
+      return res.status(400).json({ 
+        error: `Only ${product.stock} items available in stock` 
+      });
+    }
+    
     // Verify/resolve variant from product with tolerant matching
     let productVariant = null;
     const toNormWeight = (w) => String(w || "").trim().toLowerCase();
@@ -271,6 +279,14 @@ router.post("/add", verify, async (req, res) => {
       }
     });
 
+    // Reduce product stock
+    console.log("Reducing stock by", quantity, "for product", productId);
+    await db.collection("products").updateOne(
+      { _id: mongoId },
+      { $inc: { stock: -quantity } }
+    );
+    console.log("✅ Stock reduced successfully");
+
     console.log("Saving cart...");
     await cart.save();
     console.log("✅ Cart saved successfully");
@@ -304,6 +320,36 @@ router.put("/update", verify, async (req, res) => {
       return res.status(404).json({ error: "Item not found in cart" });
     }
     
+    const oldQuantity = item.quantity;
+    const quantityDifference = quantity - oldQuantity;
+    
+    // Check if we're increasing quantity and if there's enough stock
+    if (quantityDifference > 0) {
+      const db = mongoose.connection.db;
+      const product = await db.collection("products").findOne({ 
+        _id: new mongoose.Types.ObjectId(item.productId) 
+      });
+      
+      if (!product || product.stock < quantityDifference) {
+        return res.status(400).json({ 
+          error: `Only ${product?.stock || 0} items available in stock` 
+        });
+      }
+      
+      // Reduce stock for the additional quantity
+      await db.collection("products").updateOne(
+        { _id: new mongoose.Types.ObjectId(item.productId) },
+        { $inc: { stock: -quantityDifference } }
+      );
+    } else if (quantityDifference < 0) {
+      // Restore stock for the reduced quantity
+      const db = mongoose.connection.db;
+      await db.collection("products").updateOne(
+        { _id: new mongoose.Types.ObjectId(item.productId) },
+        { $inc: { stock: Math.abs(quantityDifference) } }
+      );
+    }
+    
     item.quantity = quantity;
     await cart.save();
     
@@ -327,6 +373,20 @@ router.delete("/remove/:itemId", verify, async (req, res) => {
     if (!cart) {
       return res.status(404).json({ error: "Cart not found" });
     }
+    
+    // Find the item to get its quantity before removing
+    const itemToRemove = cart.items.id(itemId);
+    if (!itemToRemove) {
+      return res.status(404).json({ error: "Item not found in cart" });
+    }
+    
+    // Restore stock before removing item
+    const db = mongoose.connection.db;
+    await db.collection("products").updateOne(
+      { _id: new mongoose.Types.ObjectId(itemToRemove.productId) },
+      { $inc: { stock: itemToRemove.quantity } }
+    );
+    console.log("✅ Stock restored:", itemToRemove.quantity, "for product", itemToRemove.productId);
     
     cart.items.pull(itemId);
     await cart.save();

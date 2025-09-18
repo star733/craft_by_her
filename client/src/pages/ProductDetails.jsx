@@ -314,13 +314,6 @@ export default function ProductDetails() {
               </span>
             </div>
           )}
-          
-          {/* Debug: Always show stock value for debugging */}
-          {process.env.NODE_ENV === 'development' && (
-            <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
-              Debug - Stock: {product.stock} (Type: {typeof product.stock})
-            </div>
-          )}
 
           {/* Variants */}
           <div style={variantsContainerStyle}>

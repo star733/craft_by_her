@@ -34,8 +34,6 @@ export default function ProductDetails() {
       }
       const data = await response.json();
       console.log("Product data:", data);
-      console.log("Product stock:", data.stock);
-      console.log("Product stock type:", typeof data.stock);
       setProduct(data);
       
       // Set first variant as default if variants exist, otherwise use price
@@ -84,39 +82,22 @@ export default function ProductDetails() {
   };
 
   const handleAddToCart = async () => {
-    console.log("=== ADD TO CART DEBUG ===");
-    console.log("Add to cart clicked");
-    console.log("Current user:", auth.currentUser);
-    console.log("User UID:", auth.currentUser?.uid);
-    console.log("Selected variant:", selectedVariant);
-    console.log("Product:", product);
-    console.log("Product ID:", id);
-    console.log("Product stock:", product?.stock);
-    console.log("Product stock type:", typeof product?.stock);
-    console.log("Stock check result:", product?.stock <= 0);
-    console.log("Quantity:", quantity);
-    
     if (!auth.currentUser) {
-      console.log("❌ No user - redirecting to login");
       toast.error("Please login to add items to cart");
       navigate("/login");
       return;
     }
 
     if (!selectedVariant) {
-      console.log("❌ No selected variant");
       toast.error("Please select a variant");
       return;
     }
 
     // Check stock before proceeding
     if (!product.stock || product.stock <= 0) {
-      console.log("❌ Product out of stock - stock:", product.stock);
       toast.error("This product is currently out of stock");
       return;
     }
-
-    console.log("✅ All checks passed - proceeding with API call");
 
     try {
       setAddingToCart(true);
@@ -321,16 +302,18 @@ export default function ProductDetails() {
             <span style={categoryValueStyle}>{product.category?.name || product.category || "Uncategorized"}</span>
           </div>
 
-          {/* Stock Status */}
-          <div style={stockContainerStyle}>
-            <span style={stockLabelStyle}>Stock Status:</span>
-            <span style={{
-              ...stockValueStyle,
-              color: product.stock > 0 ? '#22c55e' : '#dc3545'
-            }}>
-              {product.stock > 0 ? `In Stock (${product.stock} available)` : 'Out of Stock'}
-            </span>
-          </div>
+          {/* Stock Status - Only show when out of stock */}
+          {product.stock <= 0 && (
+            <div style={stockContainerStyle}>
+              <span style={stockLabelStyle}>Stock Status:</span>
+              <span style={{
+                ...stockValueStyle,
+                color: '#dc3545'
+              }}>
+                Out of Stock
+              </span>
+            </div>
+          )}
 
           {/* Variants */}
           <div style={variantsContainerStyle}>

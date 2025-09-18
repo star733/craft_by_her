@@ -1,9 +1,9 @@
 // src/utils/validate.js
 export const validateEmail = (email) => {
     if (!email || !email.trim()) return "Email is required.";
-    // Valid email with a dot-TLD of 2–10 letters (e.g. .com, .net, .in, .co.in)
-    const re = /^[^\s@]+@([^\s@]+\.)+[A-Za-z]{2,10}$/;
-    if (!re.test(email.trim())) return "Please enter a valid email (e.g. name@example.com, .net, .in).";
+    // Require a final TLD of at least 3 letters (blocks .co, .io, etc if undesired)
+    const re = /^[^\s@]+@([^\s@]+\.)+[A-Za-z]{3,}$/;
+    if (!re.test(email.trim())) return "Please enter a valid email address (use a domain like .com).";
     return "";
   };
   
@@ -15,11 +15,7 @@ export const validateEmail = (email) => {
   
   export const validateName = (name) => {
     if (!name || !name.trim()) return "Full name is required.";
-    const trimmed = name.trim();
-    if (trimmed.length < 2) return "Please enter your full name.";
-    // Disallow email-like values and numbers/symbols-heavy strings
-    if (/@|\.[A-Za-z]{2,}/.test(trimmed)) return "Please enter your full name (not an email).";
-    if (!/^[A-Za-z][A-Za-z\s'.-]{1,}$/.test(trimmed)) return "Use letters and spaces only for your name.";
+    if (name.trim().length < 2) return "Please enter your full name.";
     return "";
   };
   

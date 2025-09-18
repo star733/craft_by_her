@@ -104,11 +104,11 @@ a:hover {
 }
 
 .bk-auth-input.is-valid {
-  border-color: var(--brand, #8b5e34);
-  background: rgba(139, 94, 52, 0.06);
-  box-shadow:
-    0 0 0 4px rgba(139, 94, 52, 0.12),
-    0 4px 8px rgba(139, 94, 52, 0.08);
+  border-color: #27ae60;
+  background: rgba(39, 174, 96, 0.05);
+  box-shadow: 
+    0 0 0 4px rgba(39, 174, 96, 0.1),
+    0 4px 8px rgba(39, 174, 96, 0.1);
 }
 
 /* Enhanced error messages */
@@ -135,7 +135,7 @@ a:hover {
 /* Success message styling */
 .field-success {
   display: block;
-  color: var(--brand, #8b5e34);
+  color: #27ae60;
   font-size: 13px;
   font-weight: 500;
   margin: 6px 0 0 4px;

@@ -1,7 +1,7 @@
 // src/pages/Login.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { FaEye, FaEyeSlash } from "react-icons/fa";
 import { auth } from "../firebase";
@@ -117,6 +117,7 @@ export default function Login() {
       const { user } = await signInWithEmailAndPassword(auth, email.trim(), password);
 
       localStorage.setItem("isLoggedIn", "true");
+      toast.success("Login successful!", { className: "custom-toast", autoClose: 1200 });
 
       // ✅ Always get fresh token
      // ✅ Get token here
@@ -138,9 +139,8 @@ await fetch("http://localhost:5000/api/auth/sync", {
   }),
 });
 
-// Show a single success toast
 toast.dismiss();
-toast.success("Login successful!", { className: "custom-toast", autoClose: 1200 });
+toast.success("Login successful!", { autoClose: 1200 });
 
 // ✅ Now fetch role
 const res = await fetch("http://localhost:5000/api/auth/me", {
@@ -207,9 +207,8 @@ const { user: profile } = await res.json();
         hideProgressBar: true,
         autoClose: 800,
       });
-      // Show only one final toast
       toast.dismiss();
-      toast.success("Login successful!", { className: "custom-toast", autoClose: 1200 });
+toast.success("Login successful!", { autoClose: 1200 });
 
       // Save profile with role
       localStorage.setItem("craftedbyher_user", JSON.stringify(profile));
@@ -316,7 +315,7 @@ const { user: profile } = await res.json();
             </button>
           </div>
 
-          {/* ToastContainer is provided globally in App.jsx */}
+          <ToastContainer />
         </div>
       </div>
     </div>

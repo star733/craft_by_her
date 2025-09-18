@@ -524,36 +524,6 @@ function CartSection({ cart, onRefresh }) {
 function WishlistSection({ wishlist, onRefresh }) {
   const navigate = useNavigate();
   
-  const addToCart = async (product) => {
-    try {
-      if (!auth.currentUser) {
-        toast.error("Please login to add items to cart");
-        navigate("/login");
-        return;
-      }
-
-      if (!product?.variants?.length && !product?.price) {
-        toast.error("This product has no purchasable variant");
-        return;
-      }
-
-      const token = await auth.currentUser.getIdToken();
-      const variant = product.variants?.[0] || { weight: "1 piece", price: product.price };
-
-      const res = await fetch("http://localhost:5000/api/cart/add", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ productId: product._id, variant, quantity: 1 }),
-      });
-
-      if (!res.ok) throw new Error("Failed to add to cart");
-      toast.success("Added to cart!");
-    } catch (err) {
-      console.error("Add to cart error:", err);
-      toast.error("Failed to add to cart");
-    }
-  };
-  
   const removeFromWishlist = async (productId) => {
     try {
       const token = await auth.currentUser.getIdToken();
@@ -624,13 +594,6 @@ function WishlistSection({ wishlist, onRefresh }) {
                 >
                   <FiEye size={16} />
                   View
-                </button>
-                <button 
-                  className="bk-btn bk-btn--pill bk-btn--primary"
-                  onClick={() => addToCart(product)}
-                >
-                  <FiShoppingCart size={16} />
-                  Add to cart
                 </button>
                 <button 
                   className="bk-btn bk-btn--pill bk-btn--danger"

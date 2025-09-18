@@ -16,7 +16,7 @@ const cartSchema = new mongoose.Schema(
         },
         title: { 
           type: String, 
-          required: true 
+          required: false 
         },
         image: { 
           type: String 
@@ -40,12 +40,41 @@ const cartSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Calculate total amount before saving
-cartSchema.pre('save', function(next) {
-  this.totalAmount = this.items.reduce((total, item) => {
-    return total + (item.variant.price * item.quantity);
-  }, 0);
-  next();
+// Calculate total amount and ensure required fields before saving
+cartSchema.pre('save', async function(next) {
+  try {
+    // Calculate total amount
+    this.totalAmount = this.items.reduce((total, item) => {
+      return total + (item.variant.price * item.quantity);
+    }, 0);
+
+    // Ensure all items have required fields (title, image if available)
+    const db = mongoose.connection.db;
+    const productIds = this.items
+      .filter(item => !item.title && mongoose.Types.ObjectId.isValid(item.productId))
+      .map(item => new mongoose.Types.ObjectId(item.productId));
+    
+    if (productIds.length > 0) {
+      const products = await db.collection("products")
+        .find({ _id: { $in: productIds } })
+        .project({ title: 1, image: 1 })
+        .toArray();
+      
+      const productMap = new Map(products.map(p => [p._id.toString(), p]));
+      
+      this.items.forEach(item => {
+        const product = productMap.get(item.productId.toString());
+        if (product) {
+          if (!item.title) item.title = product.title;
+          if (!item.image && product.image) item.image = product.image;
+        }
+      });
+    }
+    
+    next();
+  } catch (error) {
+    next(error);
+  }
 });
 
 module.exports = mongoose.model("Cart", cartSchema);

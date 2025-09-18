@@ -426,7 +426,30 @@ function CartSection({ cart, onRefresh }) {
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {cart.items.map((item, index) => (
+          {(() => {
+            const groups = new Map();
+            for (const item of cart.items) {
+              const pid = (item && item.productId && item.productId._id) ? item.productId._id : item.productId;
+              const weight = item.variant?.weight;
+              const price = String(item.variant?.price);
+              const key = `${pid}__${weight}__${price}`;
+              if (!groups.has(key)) {
+                groups.set(key, {
+                  baseIds: [item._id],
+                  productId: pid,
+                  title: item.title || item?.productId?.title,
+                  image: item.image || item?.productId?.image,
+                  variant: { weight, price: Number(price) },
+                  quantity: item.quantity || 1,
+                });
+              } else {
+                const g = groups.get(key);
+                g.baseIds.push(item._id);
+                g.quantity += item.quantity || 1;
+              }
+            }
+            const aggregated = Array.from(groups.values());
+            return aggregated.map((item, index) => (
             <div key={index} style={{ 
               background: "#fff", 
               padding: "20px", 
@@ -438,10 +461,10 @@ function CartSection({ cart, onRefresh }) {
               alignItems: "center"
             }}>
               <div style={{ width: "100px", height: "100px", background: "#fff", border: "1px solid #eee", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                {item.image || item?.productId?.image ? (
+                {item.image ? (
                   <img
-                    src={`http://localhost:5000/uploads/${item.image || item.productId.image}`}
-                    alt={item.title || item?.productId?.title || "Product"}
+                    src={`http://localhost:5000/uploads/${item.image}`}
+                    alt={item.title || "Product"}
                     style={{ width: "100%", height: "100%", objectFit: "contain", padding: "6px" }}
                     onError={(e) => {
                       e.target.style.display = 'none';
@@ -450,7 +473,7 @@ function CartSection({ cart, onRefresh }) {
                   />
                 ) : null}
                 <div style={{ 
-                  display: (item.image || (item && item.productId && item.productId.image)) ? 'none' : 'flex', 
+                  display: item.image ? 'none' : 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
                   width: '100%', 
@@ -463,7 +486,7 @@ function CartSection({ cart, onRefresh }) {
               </div>
               
               <div style={{ flex: 1 }}>
-                <h4 style={{ margin: "0 0 8px 0", fontSize: "16px" }}>{item.title || item?.productId?.title}</h4>
+                <h4 style={{ margin: "0 0 8px 0", fontSize: "16px" }}>{item.title}</h4>
                 <div style={{ fontSize: "14px", color: "#666", marginBottom: "4px" }}>
                   {item.variant.weight}
                 </div>
@@ -476,7 +499,7 @@ function CartSection({ cart, onRefresh }) {
                 <button 
                   className="bk-btn bk-btn--icon"
                   onClick={() => {
-                    const pid = (item && item.productId && item.productId._id) ? item.productId._id : item.productId;
+                    const pid = item.productId;
                     if (!pid) {
                       toast.error("Product not available");
                       return;
@@ -490,7 +513,17 @@ function CartSection({ cart, onRefresh }) {
                 </button>
                 <button 
                   className="bk-btn bk-btn--icon bk-btn--danger"
-                  onClick={() => removeFromCart(item._id)}
+                  onClick={async () => {
+                    const token = await auth.currentUser.getIdToken();
+                    for (const id of item.baseIds) {
+                      await fetch(`http://localhost:5000/api/cart/remove/${id}`, {
+                        method: "DELETE",
+                        headers: { Authorization: `Bearer ${token}` },
+                      });
+                    }
+                    toast.success("Item removed from cart!");
+                    onRefresh();
+                  }}
                   title="Remove"
                   aria-label="Remove"
                 >
@@ -498,7 +531,7 @@ function CartSection({ cart, onRefresh }) {
                 </button>
               </div>
             </div>
-          ))}
+          ))})()}
           
           <div style={{ 
             background: "#fff", 

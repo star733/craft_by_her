@@ -48,6 +48,30 @@ router.get("/", verify, async (req, res) => {
     }
     if (mutated) {
       cartDoc.items = Array.from(grouped.values());
+      // Ensure required fields (e.g., title) exist before saving
+      const db = mongoose.connection.db;
+      const distinctIds = [
+        ...new Set(cartDoc.items.map((it) => it.productId.toString())),
+      ];
+      const idObjs = distinctIds
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+      const productDocs = await db
+        .collection("products")
+        .find({ _id: { $in: idObjs } })
+        .project({ title: 1, image: 1 })
+        .toArray();
+      const idToProduct = new Map(
+        productDocs.map((p) => [p._id.toString(), p])
+      );
+      cartDoc.items.forEach((it) => {
+        const p = idToProduct.get(it.productId.toString());
+        if (p) {
+          if (!it.title) it.title = p.title;
+          if (!it.image && p.image) it.image = p.image;
+        }
+      });
+
       cartDoc.markModified("items");
       await cartDoc.save();
     }
@@ -188,11 +212,11 @@ router.post("/add", verify, async (req, res) => {
       cart.items[existingItemIndex].variant.price = normalizePrice(cart.items[existingItemIndex].variant.price);
     } else {
       console.log("Adding new item to cart");
-      // Add new item with proper data types
+      // Add new item with proper data types (ensure title/image)
       cart.items.push({
         productId,
-        title: product.title, // Add product title
-        image: product.image, // Add product image
+        title: product.title,
+        image: product.image,
         variant: {
           weight: productVariant.weight,
           price: normalizePrice(productVariant.price) // Ensure price is a number
@@ -219,6 +243,26 @@ router.post("/add", verify, async (req, res) => {
       }
     }
     cart.items = Array.from(grouped.values());
+
+    // Back-fill any missing required fields on items from product docs
+    const db2 = mongoose.connection.db;
+    const distinctIds2 = [...new Set(cart.items.map((it) => it.productId.toString()))];
+    const idObjs2 = distinctIds2
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+    const products2 = await db2
+      .collection("products")
+      .find({ _id: { $in: idObjs2 } })
+      .project({ title: 1, image: 1 })
+      .toArray();
+    const idToProduct2 = new Map(products2.map((p) => [p._id.toString(), p]));
+    cart.items.forEach((it) => {
+      const p = idToProduct2.get(it.productId.toString());
+      if (p) {
+        if (!it.title) it.title = p.title;
+        if (!it.image && p.image) it.image = p.image;
+      }
+    });
 
     console.log("Saving cart...");
     await cart.save();

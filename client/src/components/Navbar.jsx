@@ -19,11 +19,24 @@ export default function Navbar() {
   }, [location.pathname]);
 
   const handleCartClick = () => {
-    navigate("/cart");
+    if (auth.currentUser) {
+      // Go to account with Cart tab selected
+      const ev = new CustomEvent("acct:setTab", { detail: "cart" });
+      window.dispatchEvent(ev);
+      navigate("/account");
+    } else {
+      navigate("/login");
+    }
   };
 
   const handleWishlistClick = () => {
-    navigate("/wishlist");
+    if (auth.currentUser) {
+      const ev = new CustomEvent("acct:setTab", { detail: "wishlist" });
+      window.dispatchEvent(ev);
+      navigate("/account");
+    } else {
+      navigate("/login");
+    }
   };
 
   return (

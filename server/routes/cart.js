@@ -14,11 +14,30 @@ router.get("/", verify, async (req, res) => {
       return res.json({ items: [], totalAmount: 0 });
     }
 
-    // Consolidate duplicates if any exist
-    const keyFor = (it) => `${it.productId.toString()}__${String(it.variant?.weight || "").trim().toLowerCase()}__${Number(it.variant?.price)}`;
+    // Consolidate duplicates if any exist (normalize weight/price strictly)
+    const normalizeWeight = (w) => String(w || "").trim().toLowerCase();
+    const normalizePrice = (p) => Number(p);
+    const keyFor = (it) => {
+      const pid = it.productId.toString();
+      const w = normalizeWeight(it.variant?.weight);
+      const p = normalizePrice(it.variant?.price);
+      return `${pid}__${w}__${p}`;
+    };
     const grouped = new Map();
     let mutated = false;
     for (const it of cartDoc.items) {
+      // Ensure item variant is normalized in-place
+      if (it?.variant) {
+        if (typeof it.variant.weight === "string") {
+          const nw = normalizeWeight(it.variant.weight);
+          if (nw !== it.variant.weight) mutated = true;
+          it.variant.weight = nw;
+        }
+        const np = normalizePrice(it.variant.price);
+        if (np !== it.variant.price) mutated = true;
+        it.variant.price = np;
+      }
+
       const k = keyFor(it);
       if (!grouped.has(k)) {
         grouped.set(k, { ...it.toObject(), quantity: Number(it.quantity || 1) });
@@ -29,6 +48,7 @@ router.get("/", verify, async (req, res) => {
     }
     if (mutated) {
       cartDoc.items = Array.from(grouped.values());
+      cartDoc.markModified("items");
       await cartDoc.save();
     }
 

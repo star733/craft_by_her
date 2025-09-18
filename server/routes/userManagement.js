@@ -28,19 +28,27 @@ router.get("/", verify, requireAdmin, async (req, res) => {
     const sortBy = req.query.sortBy || 'createdAt';
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
 
-    // Build filter object
-    const filter = {};
+    // Build filter object - exclude admin users by default
+    const filter = { role: { $ne: 'admin' } };
     
     if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { phone: { $regex: search, $options: 'i' } }
+      filter.$and = [
+        { role: { $ne: 'admin' } },
+        {
+          $or: [
+            { name: { $regex: search, $options: 'i' } },
+            { email: { $regex: search, $options: 'i' } },
+            { phone: { $regex: search, $options: 'i' } }
+          ]
+        }
       ];
     }
     
     if (role) {
-      if (role === 'user') {
+      if (role === 'admin') {
+        // Only show admin users when specifically requested
+        filter.role = 'admin';
+      } else if (role === 'user') {
         filter.$or = [
           { role: 'user' },
           { role: 'buyer' } // Handle legacy users
@@ -113,16 +121,19 @@ router.get("/", verify, requireAdmin, async (req, res) => {
 // Get user statistics
 router.get("/stats", verify, requireAdmin, async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ isActive: { $ne: false } });
+    // Exclude admin users from all counts
+    const totalUsers = await User.countDocuments({ role: { $ne: 'admin' } });
+    const activeUsers = await User.countDocuments({ role: { $ne: 'admin' }, isActive: { $ne: false } });
     const adminUsers = await User.countDocuments({ role: 'admin' });
     const buyerUsers = await User.countDocuments({ $or: [{ role: 'user' }, { role: 'buyer' }] });
     
     const recentUsers = await User.countDocuments({
+      role: { $ne: 'admin' },
       createdAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }
     });
     
     const onlineUsers = await User.countDocuments({
+      role: { $ne: 'admin' },
       lastLogin: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
     });
 

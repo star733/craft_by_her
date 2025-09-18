@@ -162,7 +162,7 @@ export default function UserManagement() {
     const roleColors = {
       admin: '#dc3545',
       user: '#28a745',
-      buyer: '#17a2b8'
+      buyer: '#8B4513' // Changed from blue to brown to match theme
     };
     
     return (
@@ -435,7 +435,7 @@ export default function UserManagement() {
                       </tr>
                     </thead>
                     <tbody>
-                      {users.map((user, index) => (
+                      {users.filter(user => user.role !== 'admin').map((user, index) => (
                         <tr key={user._id} style={{
                           backgroundColor: index % 2 === 0 ? 'white' : '#fafafa',
                           borderBottom: '1px solid #ead9c9'

@@ -26,6 +26,7 @@ import Checkout from "./pages/Checkout";
 import Payment from "./pages/Payment";
 import OrderConfirmation from "./pages/OrderConfirmation";
 import Orders from "./pages/Orders";
+import Mission from "./pages/Mission";
 import RequireAuth from "./routes/RequireAuth";
 
 export default function App() {
@@ -47,6 +48,7 @@ export default function App() {
           <Route path="/account/*" element={<Account />} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
+          <Route path="/mission" element={<Mission />} />
           <Route path="/products" element={<Products />} />
           <Route path="/products/:id" element={<ProductDetails />} />
           <Route path="/cart" element={<CartPrompt />} />

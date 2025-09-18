@@ -135,18 +135,20 @@ export default function Home() {
               preservatives. Just real, delicious food.
             </p>
             <div className="bk-cta" style={{ gap: 12 }}>
-              <a
-                href="#shop"
+              <button
+                onClick={() => navigate('/products')}
                 className="bk-btn bk-btn--pill bk-btn--primary"
+                style={{ border: 'none', cursor: 'pointer' }}
               >
                 <i className="bi bi-bag-check" /> Order Now
-              </a>
-              <a
-                href="#story"
+              </button>
+              <button
+                onClick={() => navigate('/mission')}
                 className="bk-btn bk-btn--pill bk-btn--ghost"
+                style={{ border: 'none', cursor: 'pointer' }}
               >
                 Our Story
-              </a>
+              </button>
             </div>
           </div>
         </div>
@@ -220,12 +222,13 @@ export default function Home() {
                 <p className="bk-card__text">
                   Cold-pressed oils, quality grains & spices. No shortcuts.
                 </p>
-                <a
+                <button
+                  onClick={() => navigate('/products')}
                   className="bk-btn bk-btn--pill bk-btn--ghost"
-                  href="#shop"
+                  style={{ border: 'none', cursor: 'pointer' }}
                 >
                   See Products
-                </a>
+                </button>
               </div>
             </article>
 
@@ -240,12 +243,13 @@ export default function Home() {
                 <p className="bk-card__text">
                   Every order supports fair, dignified & flexible work.
                 </p>
-                <a
+                <button
+                  onClick={() => navigate('/mission')}
                   className="bk-btn bk-btn--pill bk-btn--ghost"
-                  href="#story"
+                  style={{ border: 'none', cursor: 'pointer' }}
                 >
                   Our Mission
-                </a>
+                </button>
               </div>
             </article>
 
@@ -260,12 +264,13 @@ export default function Home() {
                 <p className="bk-card__text">
                   Freshly made & shipped pan-India in eco packaging.
                 </p>
-                <a
+                <button
+                  onClick={() => navigate('/products')}
                   className="bk-btn bk-btn--pill bk-btn--ghost"
-                  href="#shop"
+                  style={{ border: 'none', cursor: 'pointer' }}
                 >
                   Order Now
-                </a>
+                </button>
               </div>
             </article>
           </div>

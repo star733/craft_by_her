@@ -314,6 +314,16 @@ a:hover {
   gap: 12px;
 }
 
+/* Simplified header layout - when nav is hidden */
+.bk-header__main:has(.bk-nav:empty) {
+  grid-template-columns: 1fr auto;
+}
+
+/* Fallback for browsers that don't support :has() */
+.bk-header__main.simplified {
+  grid-template-columns: 1fr auto;
+}
+
 /* Legacy navigation styles (keeping for compatibility) */
 .cbh-nav-wrap {
   background: #efe6f2;

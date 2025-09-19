@@ -9,8 +9,10 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Check if we're on account page
-  const isAccountPage = location.pathname.startsWith('/account');
+  // Check if we're on account, cart, or wishlist pages
+  const isSimplifiedHeaderPage = location.pathname.startsWith('/account') || 
+                                 location.pathname.startsWith('/cart') || 
+                                 location.pathname.startsWith('/wishlist');
 
   // load user info whenever route changes
   useEffect(() => {
@@ -31,14 +33,14 @@ export default function Navbar() {
 
   return (
     <header className="bk-header">
-      <div className="bk-header__main">
+      <div className={`bk-header__main ${isSimplifiedHeaderPage ? 'simplified' : ''}`}>
         {/* Brand */}
         <div className="bk-brand" onClick={() => navigate("/")}>
           CraftedByHer
         </div>
 
-        {/* Center Nav - Hide on account page */}
-        {!isAccountPage && (
+        {/* Center Nav - Hide on account, cart, and wishlist pages */}
+        {!isSimplifiedHeaderPage && (
           <nav className="bk-nav">
             <Link to="/" className="bk-link">Home</Link>
             <Link
@@ -79,8 +81,8 @@ export default function Navbar() {
             <FiShoppingCart size={20} />
           </button>
 
-          {/* User icon - Hide on account page since user is already in their account */}
-          {!isAccountPage && (
+          {/* User icon - Hide on account, cart, and wishlist pages */}
+          {!isSimplifiedHeaderPage && (
             <button
               className="icon-btn"
               onClick={() => navigate(user ? "/account" : "/login")}

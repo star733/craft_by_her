@@ -86,8 +86,20 @@ export default function Home() {
   }, []);
 
   const goToCategory = (label) => {
-    const slug = slugify(label);
-    navigate(`/products?cat=${slug}#grid`);
+    if (label === "Bestsellers") {
+      // Scroll to bestsellers section on the same page
+      const bestsellersSection = document.getElementById("shop");
+      if (bestsellersSection) {
+        bestsellersSection.scrollIntoView({ 
+          behavior: "smooth",
+          block: "start"
+        });
+      }
+    } else {
+      // Navigate to products page for other categories
+      const slug = slugify(label);
+      navigate(`/products?cat=${slug}#grid`);
+    }
   };
 
   return (

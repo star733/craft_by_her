@@ -301,7 +301,7 @@ export default function Cart() {
 // Styles
 const containerStyle = {
   minHeight: "100vh",
-  background: "#f8fafc",
+  background: "linear-gradient(135deg, #f5f1eb 0%, #e8dcc6 100%)",
   padding: "20px",
   fontFamily: "Inter, sans-serif",
 };

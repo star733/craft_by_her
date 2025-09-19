@@ -317,7 +317,12 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "Inter, sans-serif" }}>
+    <div style={{ 
+      display: "flex", 
+      minHeight: "100vh", 
+      fontFamily: "Inter, sans-serif",
+      background: "linear-gradient(135deg, #f5f1eb 0%, #e8dcc6 100%)"
+    }}>
       {/* Sidebar */}
       <aside style={{ width: "240px", background: "#fff", borderRight: "1px solid #eee", padding: "20px" }}>
         <h2 style={{ fontSize: "20px", marginBottom: "30px", color: "#5c4033" }}>CraftedByHer</h2>

@@ -37,7 +37,7 @@ export default function WishlistPrompt() {
 // Styles
 const containerStyle = {
   minHeight: "100vh",
-  background: "#f8fafc",
+  background: "linear-gradient(135deg, #f5f1eb 0%, #e8dcc6 100%)",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",

@@ -182,7 +182,7 @@ export default function UserManagement() {
   return (
     <div style={{ 
       padding: '30px', 
-      backgroundColor: '#f8f6f3', 
+      background: 'linear-gradient(135deg, #f5f1eb 0%, #e8dcc6 100%)', 
       minHeight: '100vh',
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, sans-serif'
     }}>

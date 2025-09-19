@@ -1755,6 +1755,8 @@ body.theme-bakery {
   padding: 0 20px;
   display: grid;
   grid-template-columns: 260px 1fr;
+  background: linear-gradient(135deg, #f5f1eb 0%, #e8dcc6 100%);
+  min-height: 100vh;
   gap: 18px;
 }
 

@@ -14,6 +14,11 @@ export default function Navbar() {
                                  location.pathname.startsWith('/cart') || 
                                  location.pathname.startsWith('/wishlist');
 
+  // Determine which page we're on for icon display
+  const isAccountPage = location.pathname.startsWith('/account');
+  const isCartPage = location.pathname.startsWith('/cart');
+  const isWishlistPage = location.pathname.startsWith('/wishlist');
+
   // load user info whenever route changes
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -61,36 +66,105 @@ export default function Navbar() {
 
         {/* Right actions */}
         <div className="bk-actions">
-          {/* Wishlist */}
-          <button
-            className="icon-btn"
-            onClick={handleWishlistClick}
-            aria-label="Wishlist"
-            title="Wishlist"
-          >
-            <FiHeart size={20} />
-          </button>
+          {/* Show different icons based on current page */}
+          {isSimplifiedHeaderPage ? (
+            <>
+              {/* Cart page: Show wishlist and account icons */}
+              {isCartPage && (
+                <>
+                  <button
+                    className="icon-btn"
+                    onClick={handleWishlistClick}
+                    aria-label="Wishlist"
+                    title="Wishlist"
+                  >
+                    <FiHeart size={20} />
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => navigate("/account")}
+                    aria-label="Account"
+                    title="Account"
+                  >
+                    <FiUser size={20} />
+                  </button>
+                </>
+              )}
 
-          {/* Cart */}
-          <button
-            className="icon-btn"
-            onClick={handleCartClick}
-            aria-label="Cart"
-            title="Cart"
-          >
-            <FiShoppingCart size={20} />
-          </button>
+              {/* Wishlist page: Show cart and account icons */}
+              {isWishlistPage && (
+                <>
+                  <button
+                    className="icon-btn"
+                    onClick={handleCartClick}
+                    aria-label="Cart"
+                    title="Cart"
+                  >
+                    <FiShoppingCart size={20} />
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={() => navigate("/account")}
+                    aria-label="Account"
+                    title="Account"
+                  >
+                    <FiUser size={20} />
+                  </button>
+                </>
+              )}
 
-          {/* User icon - Hide on account, cart, and wishlist pages */}
-          {!isSimplifiedHeaderPage && (
-            <button
-              className="icon-btn"
-              onClick={() => navigate(user ? "/account" : "/login")}
-              aria-label="Profile"
-              title={user ? "Account" : "Sign In"}
-            >
-              <FiUser size={20} />
-            </button>
+              {/* Account page: Show wishlist and cart icons */}
+              {isAccountPage && (
+                <>
+                  <button
+                    className="icon-btn"
+                    onClick={handleWishlistClick}
+                    aria-label="Wishlist"
+                    title="Wishlist"
+                  >
+                    <FiHeart size={20} />
+                  </button>
+                  <button
+                    className="icon-btn"
+                    onClick={handleCartClick}
+                    aria-label="Cart"
+                    title="Cart"
+                  >
+                    <FiShoppingCart size={20} />
+                  </button>
+                </>
+              )}
+            </>
+          ) : (
+            <>
+              {/* Full navigation on other pages */}
+              <button
+                className="icon-btn"
+                onClick={handleWishlistClick}
+                aria-label="Wishlist"
+                title="Wishlist"
+              >
+                <FiHeart size={20} />
+              </button>
+
+              <button
+                className="icon-btn"
+                onClick={handleCartClick}
+                aria-label="Cart"
+                title="Cart"
+              >
+                <FiShoppingCart size={20} />
+              </button>
+
+              <button
+                className="icon-btn"
+                onClick={() => navigate(user ? "/account" : "/login")}
+                aria-label="Profile"
+                title={user ? "Account" : "Sign In"}
+              >
+                <FiUser size={20} />
+              </button>
+            </>
           )}
         </div>
       </div>

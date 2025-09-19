@@ -10,6 +10,7 @@ export default function Checkout() {
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("cod");
+  const [validationErrors, setValidationErrors] = useState({});
   const [buyerDetails, setBuyerDetails] = useState({
     name: "",
     email: "",
@@ -69,6 +70,14 @@ export default function Checkout() {
   };
 
   const handleInputChange = (field, value) => {
+    // Clear validation error when user starts typing
+    if (validationErrors[field]) {
+      setValidationErrors(prev => ({
+        ...prev,
+        [field]: null
+      }));
+    }
+
     if (field.includes(".")) {
       const [parent, child] = field.split(".");
       setBuyerDetails(prev => ({
@@ -87,35 +96,89 @@ export default function Checkout() {
   };
 
   const validateForm = () => {
+    const errors = {};
+    let isValid = true;
+
+    // Name validation
     if (!buyerDetails.name.trim()) {
-      toast.error("Name is required");
-      return false;
+      errors.name = "Name is required";
+      isValid = false;
+    } else if (buyerDetails.name.trim().length < 2) {
+      errors.name = "Name must be at least 2 characters long";
+      isValid = false;
+    } else if (!/^[a-zA-Z\s]+$/.test(buyerDetails.name.trim())) {
+      errors.name = "Name can only contain letters and spaces";
+      isValid = false;
     }
+
+    // Email validation
     if (!buyerDetails.email.trim()) {
-      toast.error("Email is required");
-      return false;
+      errors.email = "Email is required";
+      isValid = false;
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(buyerDetails.email.trim())) {
+        errors.email = "Please enter a valid email address";
+        isValid = false;
+      }
     }
+
+    // Phone validation
     if (!buyerDetails.phone.trim()) {
-      toast.error("Phone number is required");
-      return false;
+      errors.phone = "Phone number is required";
+      isValid = false;
+    } else {
+      const phoneRegex = /^[6-9]\d{9}$/;
+      if (!phoneRegex.test(buyerDetails.phone.trim())) {
+        errors.phone = "Please enter a valid 10-digit phone number starting with 6-9";
+        isValid = false;
+      }
     }
+
+    // Address validation
     if (!buyerDetails.address.street.trim()) {
-      toast.error("Street address is required");
-      return false;
+      errors["address.street"] = "Street address is required";
+      isValid = false;
+    } else if (buyerDetails.address.street.trim().length < 10) {
+      errors["address.street"] = "Please provide a complete street address (at least 10 characters)";
+      isValid = false;
     }
+
     if (!buyerDetails.address.city.trim()) {
-      toast.error("City is required");
-      return false;
+      errors["address.city"] = "City is required";
+      isValid = false;
+    } else if (buyerDetails.address.city.trim().length < 2) {
+      errors["address.city"] = "City name must be at least 2 characters long";
+      isValid = false;
+    } else if (!/^[a-zA-Z\s]+$/.test(buyerDetails.address.city.trim())) {
+      errors["address.city"] = "City name can only contain letters and spaces";
+      isValid = false;
     }
+
     if (!buyerDetails.address.state.trim()) {
-      toast.error("State is required");
-      return false;
+      errors["address.state"] = "State is required";
+      isValid = false;
+    } else if (buyerDetails.address.state.trim().length < 2) {
+      errors["address.state"] = "State name must be at least 2 characters long";
+      isValid = false;
+    } else if (!/^[a-zA-Z\s]+$/.test(buyerDetails.address.state.trim())) {
+      errors["address.state"] = "State name can only contain letters and spaces";
+      isValid = false;
     }
+
     if (!buyerDetails.address.pincode.trim()) {
-      toast.error("Pincode is required");
-      return false;
+      errors["address.pincode"] = "Pincode is required";
+      isValid = false;
+    } else {
+      const pincodeRegex = /^[1-9][0-9]{5}$/;
+      if (!pincodeRegex.test(buyerDetails.address.pincode.trim())) {
+        errors["address.pincode"] = "Please enter a valid 6-digit pincode";
+        isValid = false;
+      }
     }
-    return true;
+
+    setValidationErrors(errors);
+    return isValid;
   };
 
   const handlePlaceOrder = async () => {
@@ -222,12 +285,18 @@ export default function Checkout() {
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1px solid #ddd",
+                    border: validationErrors.name ? "2px solid #dc3545" : "1px solid #ddd",
                     borderRadius: "8px",
                     fontSize: "14px",
+                    backgroundColor: validationErrors.name ? "#fff5f5" : "white",
                   }}
                   placeholder="Enter your full name"
                 />
+                {validationErrors.name && (
+                  <div style={{ color: "#dc3545", fontSize: "12px", marginTop: "4px" }}>
+                    {validationErrors.name}
+                  </div>
+                )}
               </div>
               
               <div>
@@ -241,12 +310,18 @@ export default function Checkout() {
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1px solid #ddd",
+                    border: validationErrors.email ? "2px solid #dc3545" : "1px solid #ddd",
                     borderRadius: "8px",
                     fontSize: "14px",
+                    backgroundColor: validationErrors.email ? "#fff5f5" : "white",
                   }}
                   placeholder="Enter your email"
                 />
+                {validationErrors.email && (
+                  <div style={{ color: "#dc3545", fontSize: "12px", marginTop: "4px" }}>
+                    {validationErrors.email}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -261,12 +336,18 @@ export default function Checkout() {
                 style={{
                   width: "100%",
                   padding: "12px",
-                  border: "1px solid #ddd",
+                  border: validationErrors.phone ? "2px solid #dc3545" : "1px solid #ddd",
                   borderRadius: "8px",
                   fontSize: "14px",
+                  backgroundColor: validationErrors.phone ? "#fff5f5" : "white",
                 }}
                 placeholder="Enter your phone number"
               />
+              {validationErrors.phone && (
+                <div style={{ color: "#dc3545", fontSize: "12px", marginTop: "4px" }}>
+                  {validationErrors.phone}
+                </div>
+              )}
             </div>
             
             <h3 style={{ marginBottom: "16px", color: "#5c4033" }}>Delivery Address</h3>
@@ -343,12 +424,18 @@ export default function Checkout() {
                   style={{
                     width: "100%",
                     padding: "12px",
-                    border: "1px solid #ddd",
+                    border: validationErrors["address.pincode"] ? "2px solid #dc3545" : "1px solid #ddd",
                     borderRadius: "8px",
                     fontSize: "14px",
+                    backgroundColor: validationErrors["address.pincode"] ? "#fff5f5" : "white",
                   }}
                   placeholder="Enter pincode"
                 />
+                {validationErrors["address.pincode"] && (
+                  <div style={{ color: "#dc3545", fontSize: "12px", marginTop: "4px" }}>
+                    {validationErrors["address.pincode"]}
+                  </div>
+                )}
               </div>
               
               <div>
@@ -422,9 +509,15 @@ export default function Checkout() {
                   <div style={{ width: "60px", height: "60px", background: "#f5f5f5", borderRadius: "8px", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {item.image ? (
                       <img
-                        src={`http://localhost:5000/uploads/${item.image}`}
+                        src={item.image.startsWith('http') ? item.image : `http://localhost:5000/uploads/${item.image}`}
                         alt={item.title}
                         style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: "8px" }}
+                        onError={(e) => {
+                          // Fallback to legacy image path if upload fails
+                          if (!e.target.src.includes('/images/products/')) {
+                            e.target.src = `/images/products/${item.title?.toLowerCase().replace(/\s+/g, '-')}.jpg`;
+                          }
+                        }}
                       />
                     ) : (
                       <span style={{ fontSize: "12px", color: "#999" }}>No Image</span>

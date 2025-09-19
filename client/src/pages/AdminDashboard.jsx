@@ -132,12 +132,7 @@ export default function AdminDashboard() {
       setOrders(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Fetch orders error:", err);
-      // For now, set some mock data
-      setOrders([
-        { id: 1, customer: "John Doe", total: 1200, status: "pending", date: "2024-01-15" },
-        { id: 2, customer: "Jane Smith", total: 800, status: "completed", date: "2024-01-14" },
-        { id: 3, customer: "Bob Johnson", total: 1500, status: "shipped", date: "2024-01-13" }
-      ]);
+      setOrders([]);
     }
   };
 
@@ -698,8 +693,14 @@ export default function AdminDashboard() {
                   <tbody>
                     {orders.length === 0 ? (
                       <tr>
-                        <td colSpan="6" style={{ padding: "20px", textAlign: "center", color: "#666" }}>
-                          No orders found
+                        <td colSpan="6" style={{ padding: "40px", textAlign: "center", color: "#666" }}>
+                          <div style={{ fontSize: "18px", marginBottom: "10px" }}>📦</div>
+                          <div style={{ fontSize: "16px", fontWeight: "500", marginBottom: "5px" }}>
+                            No users have orders yet
+                          </div>
+                          <div style={{ fontSize: "14px", color: "#999" }}>
+                            Orders will appear here once customers start placing them
+                          </div>
                         </td>
                       </tr>
                     ) : (

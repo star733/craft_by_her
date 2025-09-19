@@ -9,6 +9,9 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // Check if we're on account page
+  const isAccountPage = location.pathname.startsWith('/account');
+
   // load user info whenever route changes
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -34,24 +37,25 @@ export default function Navbar() {
           CraftedByHer
         </div>
 
-        {/* Center Nav */}
-        <nav className="bk-nav">
-          <Link to="/" className="bk-link">Home</Link>
-          <Link
-            to="/products"
-            className="bk-link"
-            onClick={(e) => {
-              e.preventDefault();
-              navigate("/products");
-            }}
-          >
-            Menu
-          </Link>
-          <Link to="/about" className="bk-link">About Us</Link>
-          <Link to="/contact" className="bk-link">Contact</Link>
-          {user && <Link to="/orders" className="bk-link">My Orders</Link>}
-          
-        </nav>
+        {/* Center Nav - Hide on account page */}
+        {!isAccountPage && (
+          <nav className="bk-nav">
+            <Link to="/" className="bk-link">Home</Link>
+            <Link
+              to="/products"
+              className="bk-link"
+              onClick={(e) => {
+                e.preventDefault();
+                navigate("/products");
+              }}
+            >
+              Menu
+            </Link>
+            <Link to="/about" className="bk-link">About Us</Link>
+            <Link to="/contact" className="bk-link">Contact</Link>
+            {user && <Link to="/orders" className="bk-link">My Orders</Link>}
+          </nav>
+        )}
 
         {/* Right actions */}
         <div className="bk-actions">
@@ -75,15 +79,17 @@ export default function Navbar() {
             <FiShoppingCart size={20} />
           </button>
 
-          {/* User icon → account if logged in, else login */}
-          <button
-            className="icon-btn"
-            onClick={() => navigate(user ? "/account" : "/login")}
-            aria-label="Profile"
-            title={user ? "Account" : "Sign In"}
-          >
-            <FiUser size={20} />
-          </button>
+          {/* User icon - Hide on account page since user is already in their account */}
+          {!isAccountPage && (
+            <button
+              className="icon-btn"
+              onClick={() => navigate(user ? "/account" : "/login")}
+              aria-label="Profile"
+              title={user ? "Account" : "Sign In"}
+            >
+              <FiUser size={20} />
+            </button>
+          )}
         </div>
       </div>
     </header>

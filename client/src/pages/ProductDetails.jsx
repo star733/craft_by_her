@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { auth } from "../firebase";
 import { toast } from "react-toastify";
+import { FiShare2, FiCopy, FiMail, FiMessageCircle, FiInstagram, FiFacebook, FiTwitter } from "react-icons/fi";
 import "react-toastify/dist/ReactToastify.css";
 
 export default function ProductDetails() {
@@ -15,6 +16,7 @@ export default function ProductDetails() {
   const [addingToCart, setAddingToCart] = useState(false);
   const [addingToWishlist, setAddingToWishlist] = useState(false);
   const [itemAddedToCart, setItemAddedToCart] = useState(false);
+  const [showShareMenu, setShowShareMenu] = useState(false);
 
   useEffect(() => {
     fetchProduct();
@@ -25,6 +27,20 @@ export default function ProductDetails() {
       checkWishlistStatus();
     }
   }, [product, auth.currentUser]);
+
+  // Close share menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showShareMenu && !event.target.closest('[data-share-menu]')) {
+        setShowShareMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showShareMenu]);
 
   const fetchProduct = async () => {
     try {
@@ -170,6 +186,64 @@ export default function ProductDetails() {
     setSelectedVariant(variant);
     // Reset cart state when variant changes
     setItemAddedToCart(false);
+  };
+
+  // Share functionality
+  const getProductUrl = () => {
+    return `${window.location.origin}/products/${id}`;
+  };
+
+  const getShareText = () => {
+    if (!product) return "";
+    return `Check out this amazing product: ${product.title} - ₹${selectedVariant?.price || product.price}`;
+  };
+
+  const handleWhatsAppShare = () => {
+    const url = getProductUrl();
+    const text = getShareText();
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(`${text}\n\n${url}`)}`;
+    window.open(whatsappUrl, '_blank');
+    setShowShareMenu(false);
+  };
+
+  const handleEmailShare = () => {
+    const url = getProductUrl();
+    const text = getShareText();
+    const subject = `Check out this product: ${product.title}`;
+    const body = `${text}\n\nView product: ${url}`;
+    const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailtoUrl;
+    setShowShareMenu(false);
+  };
+
+  const handleInstagramShare = () => {
+    // Instagram doesn't support direct URL sharing, so we'll copy the link
+    const url = getProductUrl();
+    navigator.clipboard.writeText(url);
+    toast.success("Product link copied! You can paste it in your Instagram story or post.");
+    setShowShareMenu(false);
+  };
+
+  const handleFacebookShare = () => {
+    const url = getProductUrl();
+    const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`;
+    window.open(facebookUrl, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
+  };
+
+  const handleTwitterShare = () => {
+    const url = getProductUrl();
+    const text = getShareText();
+    const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;
+    window.open(twitterUrl, '_blank', 'width=600,height=400');
+    setShowShareMenu(false);
+  };
+
+  const handleCopyLink = () => {
+    const url = getProductUrl();
+    navigator.clipboard.writeText(url);
+    toast.success("Product link copied to clipboard!");
+    setShowShareMenu(false);
   };
 
   const handleWishlistToggle = async () => {
@@ -417,7 +491,7 @@ export default function ProductDetails() {
               style={{
                 ...buttonPrimary,
                 ...(addingToCart || product.stock <= 0 ? buttonDisabled : {}),
-                ...(itemAddedToCart ? { backgroundColor: "#28a745" } : {}),
+                ...(itemAddedToCart ? { backgroundColor: "#8B4513" } : {}),
               }}
             >
               {addingToCart 
@@ -445,7 +519,169 @@ export default function ProductDetails() {
                   : "🤍 Add to Wishlist"
               }
             </button>
+
+            <button
+              onClick={() => setShowShareMenu(!showShareMenu)}
+              style={{
+                ...buttonSecondary,
+                backgroundColor: "#6c757d",
+                color: "white",
+                border: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+              }}
+            >
+              <FiShare2 size={16} />
+              Share
+            </button>
           </div>
+
+          {/* Share Menu */}
+          {showShareMenu && (
+            <div 
+              data-share-menu
+              style={{
+                position: "absolute",
+                top: "100%",
+                right: "0",
+                backgroundColor: "white",
+                border: "1px solid #ddd",
+                borderRadius: "8px",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                padding: "12px",
+                zIndex: 1000,
+                minWidth: "200px",
+                marginTop: "8px"
+              }}
+            >
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, 1fr)",
+                gap: "8px"
+              }}>
+                <button
+                  onClick={handleWhatsAppShare}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 12px",
+                    border: "none",
+                    borderRadius: "6px",
+                    backgroundColor: "#25D366",
+                    color: "white",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "500"
+                  }}
+                >
+                  <FiMessageCircle size={16} />
+                  WhatsApp
+                </button>
+
+                <button
+                  onClick={handleEmailShare}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 12px",
+                    border: "none",
+                    borderRadius: "6px",
+                    backgroundColor: "#007bff",
+                    color: "white",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "500"
+                  }}
+                >
+                  <FiMail size={16} />
+                  Email
+                </button>
+
+                <button
+                  onClick={handleInstagramShare}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 12px",
+                    border: "none",
+                    borderRadius: "6px",
+                    backgroundColor: "#E4405F",
+                    color: "white",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "500"
+                  }}
+                >
+                  <FiInstagram size={16} />
+                  Instagram
+                </button>
+
+                <button
+                  onClick={handleFacebookShare}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 12px",
+                    border: "none",
+                    borderRadius: "6px",
+                    backgroundColor: "#1877F2",
+                    color: "white",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "500"
+                  }}
+                >
+                  <FiFacebook size={16} />
+                  Facebook
+                </button>
+
+                <button
+                  onClick={handleTwitterShare}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 12px",
+                    border: "none",
+                    borderRadius: "6px",
+                    backgroundColor: "#1DA1F2",
+                    color: "white",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "500"
+                  }}
+                >
+                  <FiTwitter size={16} />
+                  Twitter
+                </button>
+
+                <button
+                  onClick={handleCopyLink}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "8px 12px",
+                    border: "none",
+                    borderRadius: "6px",
+                    backgroundColor: "#6c757d",
+                    color: "white",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "500"
+                  }}
+                >
+                  <FiCopy size={16} />
+                  Copy Link
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -711,6 +947,7 @@ const actionsContainerStyle = {
   display: "flex",
   gap: "16px",
   marginTop: "8px",
+  position: "relative",
 };
 
 const buttonPrimary = {

@@ -28,6 +28,7 @@ import OrderConfirmation from "./pages/OrderConfirmation";
 import Orders from "./pages/Orders";
 import Mission from "./pages/Mission";
 import RequireAuth from "./routes/RequireAuth";
+import RequireUserAuth from "./routes/RequireUserAuth";
 
 export default function App() {
   const location = useLocation();
@@ -45,7 +46,7 @@ export default function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/forgot" element={<ForgotPassword />} />
           <Route path="/action" element={<Action />} />
-          <Route path="/account/*" element={<Account />} />
+          <Route path="/account/*" element={<RequireUserAuth><Account /></RequireUserAuth>} />
           <Route path="/about" element={<About />} />
           <Route path="/contact" element={<Contact />} />
           <Route path="/mission" element={<Mission />} />
@@ -53,12 +54,12 @@ export default function App() {
           <Route path="/products/:id" element={<ProductDetails />} />
           <Route path="/cart" element={<CartPrompt />} />
           <Route path="/wishlist" element={<WishlistPrompt />} />
-          <Route path="/cart/authenticated" element={<RequireAuth><Cart /></RequireAuth>} />
-          <Route path="/wishlist/authenticated" element={<RequireAuth><Wishlist /></RequireAuth>} />
-          <Route path="/checkout" element={<Checkout />} />
-          <Route path="/payment" element={<Payment />} />
-          <Route path="/order-confirmation" element={<OrderConfirmation />} />
-          <Route path="/orders" element={<RequireAuth><Orders /></RequireAuth>} />
+          <Route path="/cart/authenticated" element={<RequireUserAuth><Cart /></RequireUserAuth>} />
+          <Route path="/wishlist/authenticated" element={<RequireUserAuth><Wishlist /></RequireUserAuth>} />
+          <Route path="/checkout" element={<RequireUserAuth><Checkout /></RequireUserAuth>} />
+          <Route path="/payment" element={<RequireUserAuth><Payment /></RequireUserAuth>} />
+          <Route path="/order-confirmation" element={<RequireUserAuth><OrderConfirmation /></RequireUserAuth>} />
+          <Route path="/orders" element={<RequireUserAuth><Orders /></RequireUserAuth>} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/users" element={<UserManagement />} />
         </Routes>

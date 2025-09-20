@@ -6,6 +6,7 @@ import { auth } from "../firebase";
 
 export default function Navbar() {
   const [user, setUser] = useState(null);
+  const [userRole, setUserRole] = useState(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -21,19 +22,57 @@ export default function Navbar() {
 
   // load user info whenever route changes
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
       setUser(user);
+      
+      // Check user role if user is logged in
+      if (user) {
+        try {
+          const token = await user.getIdToken();
+          const response = await fetch('http://localhost:5000/api/auth/me', {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            setUserRole(data.user?.role || 'buyer');
+          } else {
+            setUserRole('buyer');
+          }
+        } catch (error) {
+          console.error('Error checking user role:', error);
+          setUserRole('buyer');
+        }
+      } else {
+        setUserRole(null);
+      }
     });
 
     return () => unsubscribe();
   }, [location.pathname]);
 
   const handleCartClick = () => {
+    if (userRole === 'admin') {
+      navigate("/admin");
+      return;
+    }
     navigate(user ? "/cart/authenticated" : "/cart");
   };
 
   const handleWishlistClick = () => {
+    if (userRole === 'admin') {
+      navigate("/admin");
+      return;
+    }
     navigate(user ? "/wishlist/authenticated" : "/wishlist");
+  };
+
+  const handleAccountClick = () => {
+    if (userRole === 'admin') {
+      navigate("/admin");
+      return;
+    }
+    navigate(user ? "/account" : "/login");
   };
 
   return (
@@ -60,7 +99,7 @@ export default function Navbar() {
             </Link>
             <Link to="/about" className="bk-link">About Us</Link>
             <Link to="/contact" className="bk-link">Contact</Link>
-            {user && <Link to="/orders" className="bk-link">My Orders</Link>}
+            {user && userRole !== 'admin' && <Link to="/orders" className="bk-link">My Orders</Link>}
           </nav>
         )}
 
@@ -70,7 +109,7 @@ export default function Navbar() {
           {isSimplifiedHeaderPage ? (
             <>
               {/* Cart page: Show wishlist and account icons */}
-              {isCartPage && (
+              {isCartPage && userRole !== 'admin' && (
                 <>
                   <button
                     className="icon-btn"
@@ -82,7 +121,7 @@ export default function Navbar() {
                   </button>
                   <button
                     className="icon-btn"
-                    onClick={() => navigate("/account")}
+                    onClick={handleAccountClick}
                     aria-label="Account"
                     title="Account"
                   >
@@ -92,7 +131,7 @@ export default function Navbar() {
               )}
 
               {/* Wishlist page: Show cart and account icons */}
-              {isWishlistPage && (
+              {isWishlistPage && userRole !== 'admin' && (
                 <>
                   <button
                     className="icon-btn"
@@ -104,7 +143,7 @@ export default function Navbar() {
                   </button>
                   <button
                     className="icon-btn"
-                    onClick={() => navigate("/account")}
+                    onClick={handleAccountClick}
                     aria-label="Account"
                     title="Account"
                   >
@@ -114,7 +153,7 @@ export default function Navbar() {
               )}
 
               {/* Account page: Show wishlist and cart icons */}
-              {isAccountPage && (
+              {isAccountPage && userRole !== 'admin' && (
                 <>
                   <button
                     className="icon-btn"
@@ -137,30 +176,34 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              {/* Full navigation on other pages */}
-              <button
-                className="icon-btn"
-                onClick={handleWishlistClick}
-                aria-label="Wishlist"
-                title="Wishlist"
-              >
-                <FiHeart size={20} />
-              </button>
+              {/* Full navigation on other pages - hide user features for admin */}
+              {userRole !== 'admin' && (
+                <>
+                  <button
+                    className="icon-btn"
+                    onClick={handleWishlistClick}
+                    aria-label="Wishlist"
+                    title="Wishlist"
+                  >
+                    <FiHeart size={20} />
+                  </button>
+
+                  <button
+                    className="icon-btn"
+                    onClick={handleCartClick}
+                    aria-label="Cart"
+                    title="Cart"
+                  >
+                    <FiShoppingCart size={20} />
+                  </button>
+                </>
+              )}
 
               <button
                 className="icon-btn"
-                onClick={handleCartClick}
-                aria-label="Cart"
-                title="Cart"
-              >
-                <FiShoppingCart size={20} />
-              </button>
-
-              <button
-                className="icon-btn"
-                onClick={() => navigate(user ? "/account" : "/login")}
+                onClick={handleAccountClick}
                 aria-label="Profile"
-                title={user ? "Account" : "Sign In"}
+                title={user ? (userRole === 'admin' ? "Admin Dashboard" : "Account") : "Sign In"}
               >
                 <FiUser size={20} />
               </button>

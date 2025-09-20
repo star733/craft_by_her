@@ -14,6 +14,7 @@ export default function ProductDetails() {
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
   const [addingToWishlist, setAddingToWishlist] = useState(false);
+  const [itemAddedToCart, setItemAddedToCart] = useState(false);
 
   useEffect(() => {
     fetchProduct();
@@ -136,6 +137,9 @@ export default function ProductDetails() {
       console.log("Cart success response:", result);
       toast.success("Added to cart successfully!");
       
+      // Set item as added to cart
+      setItemAddedToCart(true);
+      
       // Refresh product data to get updated stock
       await fetchProduct();
     } catch (error) {
@@ -144,6 +148,28 @@ export default function ProductDetails() {
     } finally {
       setAddingToCart(false);
     }
+  };
+
+  const handleGoToCart = () => {
+    if (auth.currentUser) {
+      navigate("/cart/authenticated");
+    } else {
+      navigate("/cart");
+    }
+  };
+
+  const handleQuantityChange = (newQuantity) => {
+    if (newQuantity >= 1 && newQuantity <= 10) {
+      setQuantity(newQuantity);
+      // Reset cart state when quantity changes
+      setItemAddedToCart(false);
+    }
+  };
+
+  const handleVariantChange = (variant) => {
+    setSelectedVariant(variant);
+    // Reset cart state when variant changes
+    setItemAddedToCart(false);
   };
 
   const handleWishlistToggle = async () => {
@@ -332,7 +358,7 @@ export default function ProductDetails() {
                         ? selectedVariantStyle
                         : {}),
                     }}
-                    onClick={() => setSelectedVariant(variant)}
+                    onClick={() => handleVariantChange(variant)}
                   >
                     <span style={variantWeightStyle}>{variant.weight}</span>
                     <span style={variantPriceStyle}>₹{variant.price}</span>
@@ -359,7 +385,7 @@ export default function ProductDetails() {
             <label style={quantityLabelStyle}>Quantity:</label>
             <div style={quantitySelectorStyle}>
               <button
-                onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                onClick={() => handleQuantityChange(Math.max(1, quantity - 1))}
                 style={quantityButtonStyle}
                 disabled={quantity <= 1}
               >
@@ -367,7 +393,7 @@ export default function ProductDetails() {
               </button>
               <span style={quantityValueStyle}>{quantity}</span>
               <button
-                onClick={() => setQuantity(quantity + 1)}
+                onClick={() => handleQuantityChange(quantity + 1)}
                 style={quantityButtonStyle}
               >
                 +
@@ -386,14 +412,22 @@ export default function ProductDetails() {
           {/* Action Buttons */}
           <div style={actionsContainerStyle}>
             <button
-              onClick={handleAddToCart}
+              onClick={itemAddedToCart ? handleGoToCart : handleAddToCart}
               disabled={!selectedVariant || addingToCart || product.stock <= 0}
               style={{
                 ...buttonPrimary,
                 ...(addingToCart || product.stock <= 0 ? buttonDisabled : {}),
+                ...(itemAddedToCart ? { backgroundColor: "#28a745" } : {}),
               }}
             >
-              {addingToCart ? "Adding..." : product.stock <= 0 ? "Out of Stock" : "🛒 Add to Cart"}
+              {addingToCart 
+                ? "Adding..." 
+                : product.stock <= 0 
+                  ? "Out of Stock" 
+                  : itemAddedToCart 
+                    ? "🛒 Go to Cart" 
+                    : "🛒 Add to Cart"
+              }
             </button>
 
             <button

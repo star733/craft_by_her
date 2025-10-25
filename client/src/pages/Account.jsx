@@ -190,6 +190,7 @@ export default function Account() {
         {tab === "overview" && (
           <Overview
             user={user}
+            userName={userName}
             cart={cart}
             wishlist={wishlist}
             orders={orders}
@@ -209,7 +210,7 @@ export default function Account() {
 
 /* --- Sections --- */
 
-function Overview({ user, cart, wishlist, orders, onBrowse }) {
+function Overview({ user, userName, cart, wishlist, orders, onBrowse }) {
   // helper to switch tabs without leaving account
   const goto = (tabKey) => {
     const ev = new CustomEvent("acct:setTab", { detail: tabKey });

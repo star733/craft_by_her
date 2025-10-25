@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Live Delivery Tracking</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+	<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+	<style>
+		body { margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:#f7f7fb; color:#1f2937; }
+		.header { padding: 16px 20px; background:#ffffff; border-bottom:1px solid #eee; position: sticky; top:0; z-index: 10; display:flex; justify-content: space-between; align-items:center; }
+		.header h1 { margin:0; font-size:18px; }
+		.wrapper { padding: 16px; max-width: 1040px; margin: 0 auto; }
+		.controls { display:flex; gap: 10px; align-items:center; flex-wrap: wrap; margin-bottom: 12px; }
+		.button { appearance: none; border:0; padding: 10px 14px; border-radius: 8px; font-weight: 600; cursor: pointer; }
+		.primary { background:#2563eb; color:#fff; }
+		.danger { background:#dc2626; color:#fff; }
+		.badge { display:inline-block; padding:4px 10px; border-radius:12px; background:#eef2ff; color:#3730a3; font-size:12px; font-weight:600; }
+		#map { width: 100%; height: 70vh; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,.05); border:1px solid #e5e7eb; }
+		.panel { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px 14px; box-shadow: 0 2px 10px rgba(0,0,0,.05); display:flex; justify-content:space-between; align-items:center; }
+		.metrics { display:flex; gap: 12px; align-items:center; }
+		.metric { padding:6px 10px; background:#f3f4f6; border-radius: 8px; font-size: 13px; color:#111827; }
+	</style>
+</head>
+<body>
+	<div class="header">
+		<h1>Live Delivery Tracking</h1>
+		<span class="badge">Delivery Boy is on the way 🚚</span>
+	</div>
+	<div class="wrapper">
+		<div class="controls">
+			<button id="btnStart" class="button primary">Start Simulation</button>
+			<button id="btnStop" class="button danger">Stop Simulation</button>
+			<button id="btnDeliver" class="button" style="background:#10b981; color:#fff;">Force Deliver</button>
+			<button id="btnForceDelivered" class="button" style="background:#f59e0b; color:#fff;">Force Status</button>
+			<div class="metrics">
+				<span id="coord" class="metric">Lat: - , Lon: -</span>
+				<span id="updates" class="metric">Updates: 0</span>
+				<span id="distance" class="metric">Distance: 0 m</span>
+			</div>
+		</div>
+		<div id="map"></div>
+		<div style="margin-top:10px" class="panel">
+			<span>Tip: You can open multiple tabs of this page. All buyers will receive the same simulated live location in real-time.</span>
+		</div>
+	</div>
+
+	<script src="https://cdn.socket.io/4.7.4/socket.io.min.js" crossorigin="anonymous"></script>
+	<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+	<script>
+		// Connect to Socket.IO server at same origin (works for any port)
+		const socket = io(`${location.protocol}//${location.host}`);
+
+		// Leaflet map init
+		const map = L.map('map').setView([9.9312, 76.2673], 14);
+		L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+			attribution: '&copy; OpenStreetMap contributors'
+		}).addTo(map);
+
+		// Delivery boy starts from Kanjirappally (not destination)
+		const startPos = { lat: 9.5341, lon: 76.7852 };
+		const destPos = { lat: 9.9312, lon: 76.2673 };
+		
+		const marker = L.marker([startPos.lat, startPos.lon]).addTo(map);
+		marker.bindPopup('Delivery Boy is on the way 🚚').openPopup();
+		
+		// Add destination marker
+		const destMarker = L.marker([destPos.lat, destPos.lon], {
+			icon: L.divIcon({
+				className: 'custom-destination-marker',
+				html: '<div style="background: #dc2626; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">📍</div>',
+				iconSize: [20, 20],
+				iconAnchor: [10, 10]
+			})
+		}).addTo(map);
+		destMarker.bindPopup('Buyer Location 📍');
+
+		// Polyline for route history (bonus)
+		let coords = [];
+		let polyline = L.polyline(coords, { color: '#2563eb', weight: 4 }).addTo(map);
+
+		// Helpers
+		const $coord = document.getElementById('coord');
+		const $updates = document.getElementById('updates');
+		const $distance = document.getElementById('distance');
+		const $btnStart = document.getElementById('btnStart');
+		const $btnStop = document.getElementById('btnStop');
+		const $btnDeliver = document.getElementById('btnDeliver');
+		const $btnForceDelivered = document.getElementById('btnForceDelivered');
+
+		let totalDistance = 0; // meters
+
+		function haversine(lat1, lon1, lat2, lon2) {
+			// Calculate distance in meters between two GPS points
+			const toRad = (v) => (v * Math.PI) / 180;
+			const R = 6371000; // meters
+			const dLat = toRad(lat2 - lat1);
+			const dLon = toRad(lon2 - lon1);
+			const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2) * Math.sin(dLon/2);
+			const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+			return R * c;
+		}
+
+		// Socket event wiring
+		socket.on('connect', () => {
+			console.log('Connected to realtime server', socket.id);
+		});
+
+		socket.on('location-D1', (payload) => {
+			// Support legacy and structured payloads
+			const lat = payload.lat ?? payload.latitude;
+			const lon = payload.lon ?? payload.longitude;
+			const remainingMeters = payload.remainingMeters ?? payload.remainingDistance;
+			const isDelivered = payload.delivered ?? false;
+			
+			// Update marker position
+			marker.setLatLng([lat, lon]);
+			
+			// Keep map centered on delivery boy's current position
+			map.setView([lat, lon], map.getZoom());
+			
+			if (isDelivered) {
+				marker.getPopup().setContent('Delivered ✅');
+				marker.openPopup();
+				// When delivered, center map on destination
+				map.setView([destPos.lat, destPos.lon], map.getZoom());
+			} else {
+				marker.getPopup().setContent('Delivery Boy is on the way 🚚');
+			}
+
+			// Update path and distance
+			coords.push([lat, lon]);
+			polyline.setLatLngs(coords);
+			if (coords.length >= 2) {
+				const last = coords[coords.length - 2];
+				totalDistance += haversine(last[0], last[1], lat, lon);
+			}
+
+			// UI labels
+			$coord.textContent = `Lat: ${lat.toFixed(6)}, Lon: ${lon.toFixed(6)}`;
+			$updates.textContent = isDelivered ? `Delivered ✅` : `ETA: ${(payload.etaMinutes ?? 0)} min`;
+			$distance.textContent = `Distance: ${Math.round(remainingMeters ?? totalDistance)} m`;
+			
+			// Disable buttons when delivered
+			if (isDelivered) {
+				$btnStart.disabled = true;
+				$btnStop.disabled = true;
+				$btnStart.textContent = 'Delivered ✅';
+				$btnStop.textContent = 'Completed';
+			}
+			
+			console.log('[CLIENT] location-D1', payload);
+		});
+
+		socket.on('simulation-state', (s) => {
+			console.log('Simulation state:', s);
+		});
+
+		socket.on('delivered-D1', (data) => {
+			console.log('[TRACK] delivered-D1 event:', data);
+			marker.getPopup().setContent('Delivered ✅');
+			marker.openPopup();
+			$updates.textContent = 'Delivered ✅';
+			$btnStart.disabled = true;
+			$btnStop.disabled = true;
+			$btnStart.textContent = 'Delivered ✅';
+			$btnStop.textContent = 'Completed';
+		});
+		socket.on('orderDelivered', (data) => {
+			console.log('[TRACK] orderDelivered event:', data);
+			marker.getPopup().setContent('Delivered ✅');
+			marker.openPopup();
+			$updates.textContent = 'Delivered ✅';
+			$btnStart.disabled = true;
+			$btnStop.disabled = true;
+			$btnStart.textContent = 'Delivered ✅';
+			$btnStop.textContent = 'Completed';
+		});
+		socket.on('delivery-complete', (data) => {
+			console.log('[TRACK] delivery-complete event:', data);
+			marker.getPopup().setContent('Delivered ✅');
+			marker.openPopup();
+			$updates.textContent = 'Delivered ✅';
+			$btnStart.disabled = true;
+			$btnStop.disabled = true;
+			$btnStart.textContent = 'Delivered ✅';
+			$btnStop.textContent = 'Completed';
+		});
+
+		// Controls
+		$btnStart.addEventListener('click', () => {
+			coords = [];
+			polyline.setLatLngs(coords);
+			totalDistance = 0;
+			$distance.textContent = 'Distance: 0 m';
+			
+			// Reset marker to starting position
+			marker.setLatLng([startPos.lat, startPos.lon]);
+			marker.bindPopup('Delivery Boy is on the way 🚚').openPopup();
+			
+			// Start simulation with proper coordinates
+			socket.emit('start-simulation', {
+				start: startPos, // Kanjirappally (delivery boy starting point)
+				dest: destPos,   // Kochi (buyer location)
+				intervalSeconds: 3,
+				durationSeconds: 60
+			});
+		});
+
+		$btnStop.addEventListener('click', () => {
+			socket.emit('stop-simulation');
+		});
+
+		$btnDeliver.addEventListener('click', async () => {
+			try {
+				const response = await fetch('/deliver', { method: 'POST' });
+				const data = await response.json();
+				console.log('Force deliver response:', data);
+			} catch (error) {
+				console.error('Error forcing delivery:', error);
+			}
+		});
+
+		$btnForceDelivered.addEventListener('click', async () => {
+			try {
+				const response = await fetch('/force-delivered', { method: 'POST' });
+				const data = await response.json();
+				console.log('Force delivered response:', data);
+			} catch (error) {
+				console.error('Error forcing delivered status:', error);
+			}
+		});
+	</script>
+</body>
+</html>
+
+

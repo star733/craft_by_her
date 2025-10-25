@@ -1,0 +1,202 @@
+[
+  {
+    "id": "1",
+    "name": "Organic Turmeric Powder",
+    "category": "spices",
+    "price": 299,
+    "rating": 4.5,
+    "mainIngredient": "turmeric",
+    "image": "turmeric-powder.jpg",
+    "description": "Premium organic turmeric powder with high curcumin content"
+  },
+  {
+    "id": "2", 
+    "name": "Premium Cumin Seeds",
+    "category": "spices",
+    "price": 189,
+    "rating": 4.3,
+    "mainIngredient": "cumin",
+    "image": "cumin-seeds.jpg",
+    "description": "Aromatic cumin seeds perfect for Indian cooking"
+  },
+  {
+    "id": "3",
+    "name": "Coriander Powder",
+    "category": "spices", 
+    "price": 149,
+    "rating": 4.2,
+    "mainIngredient": "coriander",
+    "image": "coriander-powder.jpg",
+    "description": "Freshly ground coriander powder"
+  },
+  {
+    "id": "4",
+    "name": "Red Chili Powder",
+    "category": "spices",
+    "price": 199,
+    "rating": 4.4,
+    "mainIngredient": "chili",
+    "image": "chili-powder.jpg", 
+    "description": "Spicy red chili powder for authentic Indian taste"
+  },
+  {
+    "id": "5",
+    "name": "Garam Masala",
+    "category": "spices",
+    "price": 249,
+    "rating": 4.6,
+    "mainIngredient": "mixed",
+    "image": "garam-masala.jpg",
+    "description": "Traditional garam masala blend of aromatic spices"
+  },
+  {
+    "id": "6",
+    "name": "Basmati Rice Premium",
+    "category": "grains",
+    "price": 399,
+    "rating": 4.7,
+    "mainIngredient": "rice",
+    "image": "basmati-rice.jpg",
+    "description": "Premium long grain basmati rice"
+  },
+  {
+    "id": "7",
+    "name": "Whole Wheat Flour",
+    "category": "grains",
+    "price": 89,
+    "rating": 4.1,
+    "mainIngredient": "wheat",
+    "image": "wheat-flour.jpg",
+    "description": "Freshly milled whole wheat flour"
+  },
+  {
+    "id": "8",
+    "name": "Moong Dal",
+    "category": "pulses",
+    "price": 129,
+    "rating": 4.3,
+    "mainIngredient": "moong",
+    "image": "moong-dal.jpg",
+    "description": "Split yellow moong dal"
+  },
+  {
+    "id": "9",
+    "name": "Toor Dal",
+    "category": "pulses", 
+    "price": 139,
+    "rating": 4.2,
+    "mainIngredient": "toor",
+    "image": "toor-dal.jpg",
+    "description": "Traditional toor dal for sambar and dal"
+  },
+  {
+    "id": "10",
+    "name": "Chana Dal",
+    "category": "pulses",
+    "price": 119,
+    "rating": 4.4,
+    "mainIngredient": "chana",
+    "image": "chana-dal.jpg",
+    "description": "Split chickpea dal"
+  },
+  {
+    "id": "11",
+    "name": "Almonds Premium",
+    "category": "nuts",
+    "price": 899,
+    "rating": 4.8,
+    "mainIngredient": "almond",
+    "image": "almonds.jpg",
+    "description": "Premium California almonds"
+  },
+  {
+    "id": "12",
+    "name": "Cashew Nuts",
+    "category": "nuts",
+    "price": 1299,
+    "rating": 4.6,
+    "mainIngredient": "cashew",
+    "image": "cashews.jpg",
+    "description": "Premium whole cashew nuts"
+  },
+  {
+    "id": "13",
+    "name": "Walnuts",
+    "category": "nuts",
+    "price": 799,
+    "rating": 4.5,
+    "mainIngredient": "walnut",
+    "image": "walnuts.jpg",
+    "description": "Fresh walnuts rich in omega-3"
+  },
+  {
+    "id": "14",
+    "name": "Green Tea",
+    "category": "beverages",
+    "price": 199,
+    "rating": 4.3,
+    "mainIngredient": "tea",
+    "image": "green-tea.jpg",
+    "description": "Premium organic green tea leaves"
+  },
+  {
+    "id": "15",
+    "name": "Black Tea",
+    "category": "beverages",
+    "price": 149,
+    "rating": 4.1,
+    "mainIngredient": "tea",
+    "image": "black-tea.jpg",
+    "description": "Strong black tea for morning brew"
+  },
+  {
+    "id": "16",
+    "name": "Coffee Beans",
+    "category": "beverages",
+    "price": 399,
+    "rating": 4.4,
+    "mainIngredient": "coffee",
+    "image": "coffee-beans.jpg",
+    "description": "Premium arabica coffee beans"
+  },
+  {
+    "id": "17",
+    "name": "Honey Pure",
+    "category": "sweeteners",
+    "price": 299,
+    "rating": 4.6,
+    "mainIngredient": "honey",
+    "image": "honey.jpg",
+    "description": "Pure natural honey from wildflowers"
+  },
+  {
+    "id": "18",
+    "name": "Jaggery Powder",
+    "category": "sweeteners",
+    "price": 189,
+    "rating": 4.2,
+    "mainIngredient": "jaggery",
+    "image": "jaggery.jpg",
+    "description": "Organic jaggery powder for natural sweetness"
+  },
+  {
+    "id": "19",
+    "name": "Coconut Oil",
+    "category": "oils",
+    "price": 249,
+    "rating": 4.5,
+    "mainIngredient": "coconut",
+    "image": "coconut-oil.jpg",
+    "description": "Cold-pressed virgin coconut oil"
+  },
+  {
+    "id": "20",
+    "name": "Olive Oil",
+    "category": "oils",
+    "price": 399,
+    "rating": 4.7,
+    "mainIngredient": "olive",
+    "image": "olive-oil.jpg",
+    "description": "Extra virgin olive oil for healthy cooking"
+  }
+]

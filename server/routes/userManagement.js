@@ -193,16 +193,22 @@ router.get("/:userId", verify, requireAdmin, async (req, res) => {
             .toArray();
 
           const idToProduct = new Map(products.map((p) => [String(p._id), p]));
-          cartDetailed = cartDoc.items.map((item) => {
-            const prod = idToProduct.get(String(item.productId)) || {};
-            return {
-              ...item,
-              productId: String(item.productId),
-              title: prod.title || 'Product',
-              image: prod.image || prod.img || null,
-              price: item.price || prod.price || (Array.isArray(prod.variants) && prod.variants[0]?.price) || null,
-            };
-          });
+          cartDetailed = cartDoc.items
+            .map((item) => {
+              const prod = idToProduct.get(String(item.productId));
+              // Only include items where the product exists in the database
+              if (!prod || !prod.title) {
+                return null;
+              }
+              return {
+                ...item,
+                productId: String(item.productId),
+                title: prod.title,
+                image: prod.image || prod.img || null,
+                price: item.variant?.price || item.price || prod.price || (Array.isArray(prod.variants) && prod.variants[0]?.price) || null,
+              };
+            })
+            .filter(Boolean); // Remove null entries
         }
       }
     } catch (e) {
@@ -230,19 +236,51 @@ router.get("/:userId", verify, requireAdmin, async (req, res) => {
           .toArray();
 
         const idToProduct = new Map(products.map((p) => [String(p._id), p]));
-        wishlistDetailed = (wishDoc.products || []).map((pid) => {
-          const prod = idToProduct.get(String(pid)) || {};
-          return {
-            productId: String(pid),
-            title: prod.title || 'Product',
-            image: prod.image || prod.img || null,
-            price: prod.price || (Array.isArray(prod.variants) && prod.variants[0]?.price) || null,
-          };
-        });
+        wishlistDetailed = (wishDoc?.products || [])
+          .map((pid) => {
+            const prod = idToProduct.get(String(pid));
+            // Only include products that actually exist in the database
+            if (!prod || !prod.title) {
+              return null;
+            }
+            return {
+              productId: String(pid),
+              title: prod.title,
+              image: prod.image || prod.img || null,
+              price: prod.price || (Array.isArray(prod.variants) && prod.variants[0]?.price) || null,
+            };
+          })
+          .filter(Boolean); // Remove null entries
       }
     } catch (e) {
       console.warn('Wishlist enrichment failed:', e?.message);
       wishlistDetailed = wishDoc?.products || [];
+    }
+
+    // Clean up invalid product references from the actual collections
+    try {
+      if (cartDoc && cartDetailed.length !== cartDoc.items.length) {
+        const validProductIds = cartDetailed.map(item => item.productId);
+        const validItems = cartDoc.items.filter(item => validProductIds.includes(String(item.productId)));
+        if (validItems.length !== cartDoc.items.length) {
+          await db.collection('carts').updateOne(
+            { userId: user.uid },
+            { $set: { items: validItems } }
+          );
+        }
+      }
+
+      if (wishDoc && wishlistDetailed.length !== (wishDoc.products || []).length) {
+        const validProductIds = wishlistDetailed.map(item => new mongoose.Types.ObjectId(item.productId));
+        if (validProductIds.length !== (wishDoc.products || []).length) {
+          await db.collection('wishlists').updateOne(
+            { userId: user.uid },
+            { $set: { products: validProductIds } }
+          );
+        }
+      }
+    } catch (cleanupError) {
+      console.warn('Cleanup failed:', cleanupError?.message);
     }
 
     res.json({

@@ -161,10 +161,11 @@ export default function UserManagement() {
   const getRoleBadge = (role) => {
     const roleColors = {
       admin: '#dc3545',
-      user: '#28a745',
-      buyer: '#8B4513' // Changed from blue to brown to match theme
+      user: '#28a745'
     };
-    
+
+    // Normalize display: all non-admins are shown as "User"
+    const normalized = role === 'admin' ? 'admin' : 'user';
     return (
       <span style={{
         padding: '4px 8px',
@@ -172,9 +173,9 @@ export default function UserManagement() {
         fontSize: '12px',
         fontWeight: '600',
         color: '#fff',
-        backgroundColor: roleColors[role] || '#6c757d'
+        backgroundColor: roleColors[normalized] || '#28a745'
       }}>
-        {role === 'admin' ? 'Admin' : (role === 'buyer' ? 'Buyer' : 'User')}
+        {normalized === 'admin' ? 'Admin' : 'User'}
       </span>
     );
   };
@@ -327,27 +328,16 @@ export default function UserManagement() {
                     <option value="">All Roles</option>
                     <option value="admin">Admin</option>
                     <option value="user">User</option>
-                    <option value="buyer">Buyer</option>
                   </select>
-                  <select
-                    value={filters.status}
-                    onChange={(e) => handleFilterChange('status', e.target.value)}
-                    style={{
-                      padding: '12px 16px',
-                      border: '2px solid #ead9c9',
-                      borderRadius: '8px',
-                      fontSize: '14px',
-                      outline: 'none',
-                      backgroundColor: '#fafafa',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <option value="">All Status</option>
-                    <option value="online">Online</option>
-                    <option value="recent">Recent</option>
-                    <option value="offline">Offline</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                  {/* Status filter removed as requested */}
+                  <div style={{ display: 'none' }}>
+                    <select
+                      value={filters.status}
+                      onChange={(e) => handleFilterChange('status', e.target.value)}
+                    >
+                      <option value="">All Status</option>
+                    </select>
+                  </div>
                   <select
                     value={filters.sortBy}
                     onChange={(e) => handleFilterChange('sortBy', e.target.value)}
@@ -409,7 +399,8 @@ export default function UserManagement() {
                           textAlign: 'left',
                           fontWeight: '600',
                           color: '#3f2d23',
-                          fontSize: '14px'
+                          fontSize: '14px',
+                          display: 'none'
                         }}>Status</th>
                         <th style={{
                           padding: '16px',
@@ -475,20 +466,12 @@ export default function UserManagement() {
                             </div>
                           </td>
                           <td style={{ padding: '16px' }}>{getRoleBadge(user.role)}</td>
-                          <td style={{ padding: '16px' }}>
-                            <span style={{
-                              padding: '6px 12px',
-                              borderRadius: '20px',
-                              fontSize: '12px',
-                              fontWeight: '500',
-                              backgroundColor: user.isActive ? '#d4edda' : '#f8d7da',
-                              color: user.isActive ? '#155724' : '#721c24'
-                            }}>
-                              {user.isActive ? 'Active' : 'Inactive'}
-                            </span>
+                          {/* Status column removed as requested */}
+                          <td style={{ padding: '16px', display: 'none' }}>
+                            <span />
                           </td>
                           <td style={{ padding: '16px', color: '#7b6457' }}>
-                            {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
+                            {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Recently'}
                           </td>
                           <td style={{ padding: '16px', color: '#7b6457' }}>
                             {new Date(user.createdAt).toLocaleDateString()}
@@ -845,7 +828,7 @@ function UserDetailsModal({ user, onClose }) {
                     }}>
                       <div style={{ fontSize: '12px', color: '#7b6457', marginBottom: '4px' }}>Last Login</div>
                       <div style={{ fontSize: '16px', fontWeight: '600', color: '#3f2d23' }}>
-                        {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Never'}
+                        {user.lastLogin ? new Date(user.lastLogin).toLocaleDateString() : 'Recently'}
                       </div>
                     </div>
                   </div>
@@ -1030,8 +1013,36 @@ function UserDetailsModal({ user, onClose }) {
                             </div>
                           </div>
                           <div style={{ fontSize: '12px', color: '#7b6457' }}>
-                            Status: {order.status || 'Pending'} | Total: ₹{order.totalAmount || 0}
+                            Status: {order.orderStatus || 'pending'} | Total: ₹{order.finalAmount ?? order.totalAmount ?? 0}
                           </div>
+
+                          {/* Order items list */}
+                          {Array.isArray(order.items) && order.items.length > 0 && (
+                            <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              {order.items.map((it, i) => {
+                                const imgSrc = it?.image ? `http://localhost:5000/uploads/${it.image}` : null;
+                                const price = (it?.variant?.price ?? it?.price ?? 0);
+                                return (
+                                  <div key={i} style={{ display: 'flex', gap: '12px', alignItems: 'center', background: '#fff', padding: '8px', borderRadius: '8px', border: '1px solid #ead9c9' }}>
+                                    <div style={{ width: '48px', height: '48px', borderRadius: '8px', overflow: 'hidden', background: '#f0eae4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                      {imgSrc ? (
+                                        <img src={imgSrc} alt={it?.title || 'Product'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                      ) : (
+                                        <span style={{ fontSize: '18px', color: '#7b6457' }}>🧺</span>
+                                      )}
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                      <div style={{ fontWeight: 600, color: '#3f2d23' }}>{it?.title || 'Product'}</div>
+                                      <div style={{ fontSize: '12px', color: '#7b6457' }}>
+                                        Qty: {it?.quantity} {it?.variant?.weight ? `• ${it.variant.weight}` : ''}
+                                      </div>
+                                    </div>
+                                    <div style={{ fontWeight: 600, color: '#5c4033' }}>₹{price}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>

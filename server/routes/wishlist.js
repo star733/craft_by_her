@@ -8,7 +8,7 @@ const Product = require("../models/Product");
 router.get("/", verify, async (req, res) => {
   try {
     const wishlist = await Wishlist.findOne({ userId: req.user.uid })
-      .populate("products", "title image variants")
+      .populate("products", "title image variants category stock price")
       .lean();
     
     if (!wishlist) {
@@ -57,7 +57,7 @@ router.post("/add", verify, async (req, res) => {
     
     // Return updated wishlist with populated data
     const updatedWishlist = await Wishlist.findById(wishlist._id)
-      .populate("products", "title image variants")
+      .populate("products", "title image variants category stock price")
       .lean();
     
     res.json(updatedWishlist);
@@ -81,7 +81,7 @@ router.delete("/remove/:productId", verify, async (req, res) => {
     await wishlist.save();
     
     const updatedWishlist = await Wishlist.findById(wishlist._id)
-      .populate("products", "title image variants")
+      .populate("products", "title image variants category stock price")
       .lean();
     
     res.json(updatedWishlist);

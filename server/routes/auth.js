@@ -36,7 +36,6 @@ router.post("/sync", verify, async (req, res) => {
         $set: update, 
         $setOnInsert: { 
           createdAt: new Date(),
-          loginCount: 0,
           totalOrders: 0,
           totalSpent: 0,
           isActive: true,
@@ -47,12 +46,19 @@ router.post("/sync", verify, async (req, res) => {
       { upsert: true, new: true }
     );
 
-    // Add login activity
-    await user.addActivity('login', {
-      provider: provider || 'password',
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent')
-    }, req.ip, req.get('User-Agent'));
+    // Add login activity (guard against null method or validation issues)
+    try {
+      if (user && typeof user.addActivity === 'function') {
+        await user.addActivity('login', {
+          provider: provider || 'password',
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent')
+        }, req.ip, req.get('User-Agent'));
+        await user.save();
+      }
+    } catch (activityErr) {
+      console.warn('[SYNC ACTIVITY WARN]', activityErr?.message || activityErr);
+    }
 
     res.json({ ok: true, user });
   } catch (e) {

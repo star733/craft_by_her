@@ -190,7 +190,11 @@ export default function Wishlist() {
                 <div style={productDetailsStyle}>
                   <h3 style={productTitleStyle}>{product.title}</h3>
                   <p style={categoryStyle}>
-                    {product.category?.name || "Uncategorized"}
+                    {typeof product.category === 'object' && product.category?.name
+                      ? product.category.name
+                      : (typeof product.category === 'string' && product.category.trim() !== ''
+                        ? product.category
+                        : 'Uncategorized')}
                   </p>
 
                   {product.variants && product.variants.length > 0 ? (

@@ -31,6 +31,7 @@ export default function Orders() {
 
       if (response.ok) {
         const ordersData = await response.json();
+        console.log("Fetched orders:", ordersData);
         setOrders(ordersData);
       } else {
         throw new Error("Failed to fetch orders");
@@ -77,8 +78,14 @@ export default function Orders() {
     }
   };
 
-  const handleCancelOrder = async (orderId) => {
-    if (!window.confirm("Are you sure you want to cancel this order?")) {
+  const handleCancelOrder = async (orderId, order) => {
+    const paymentInfo = order.paymentStatus === "paid" 
+      ? "\n\nSince you've already paid, the amount will be refunded to your original payment method within 5-7 business days."
+      : "";
+    
+    const confirmMessage = `Are you sure you want to cancel this order?${paymentInfo}`;
+    
+    if (!window.confirm(confirmMessage)) {
       return;
     }
 
@@ -92,7 +99,12 @@ export default function Orders() {
       });
 
       if (response.ok) {
-        toast.success("Order cancelled successfully");
+        const result = await response.json();
+        if (order.paymentStatus === "paid") {
+          toast.success("Order cancelled successfully! Refund will be processed within 5-7 business days.");
+        } else {
+          toast.success("Order cancelled successfully!");
+        }
         fetchOrders(); // Refresh orders list
       } else {
         const error = await response.json();
@@ -105,8 +117,8 @@ export default function Orders() {
   };
 
   const canCancelOrder = (order) => {
-    return ["pending", "confirmed"].includes(order.orderStatus) && 
-           order.paymentStatus !== "paid";
+    // Allow canceling if order is not yet shipped or delivered
+    return ["pending", "confirmed", "preparing"].includes(order.orderStatus);
   };
 
   if (loading) {
@@ -172,9 +184,15 @@ export default function Orders() {
                     borderRadius: "20px", 
                     fontSize: "12px", 
                     fontWeight: "600",
-                    marginBottom: "8px"
+                    marginBottom: "8px",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px"
                   }}>
                     {getStatusText(order.orderStatus)}
+                    {canCancelOrder(order) && (
+                      <span style={{ fontSize: "10px", opacity: "0.8" }}>• Cancellable</span>
+                    )}
                   </div>
                   <div style={{ fontSize: "16px", fontWeight: "600", color: "#5c4033" }}>
                     ₹{order.finalAmount}
@@ -196,10 +214,10 @@ export default function Orders() {
                       justifyContent: "center",
                       overflow: "hidden"
                     }}>
-                      {item.image ? (
+                      {(item.image || (item.productId && item.productId.image)) ? (
                         <img
-                          src={`http://localhost:5000/uploads/${item.image}`}
-                          alt={item.title}
+                          src={`http://localhost:5000/uploads/${item.image || (item.productId && item.productId.image)}`}
+                          alt={item.title || (item.productId && item.productId.title) || "Product"}
                           style={{ width: "100%", height: "100%", objectFit: "cover" }}
                         />
                       ) : (
@@ -234,7 +252,7 @@ export default function Orders() {
               {/* Order Actions */}
               <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
                 <button
-                  onClick={() => navigate(`/order-confirmation`, { state: { order } })}
+                  onClick={() => navigate(`/order-confirmation/${order._id}`, { state: { order } })}
                   style={{
                     padding: "8px 16px",
                     background: "#5c4033",
@@ -251,7 +269,7 @@ export default function Orders() {
                 
                 {canCancelOrder(order) && (
                   <button
-                    onClick={() => handleCancelOrder(order._id)}
+                    onClick={() => handleCancelOrder(order._id, order)}
                     style={{
                       padding: "8px 16px",
                       background: "#dc3545",
@@ -261,7 +279,10 @@ export default function Orders() {
                       cursor: "pointer",
                       fontSize: "14px",
                       fontWeight: "600",
+                      transition: "background-color 0.3s ease",
                     }}
+                    onMouseOver={(e) => e.target.style.background = "#c82333"}
+                    onMouseOut={(e) => e.target.style.background = "#dc3545"}
                   >
                     Cancel Order
                   </button>

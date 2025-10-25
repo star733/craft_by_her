@@ -7,7 +7,6 @@ const orderSchema = new mongoose.Schema({
   },
   orderNumber: {
     type: String,
-    required: true,
     unique: true,
   },
   items: [
@@ -65,8 +64,27 @@ const orderSchema = new mongoose.Schema({
   },
   orderStatus: {
     type: String,
-    enum: ["pending", "confirmed", "preparing", "shipped", "delivered", "cancelled"],
+    enum: ["pending", "confirmed", "preparing", "assigned", "accepted", "picked_up", "shipped", "in_transit", "delivered", "cancelled", "rejected", "failed"],
     default: "pending",
+  },
+  // Delivery status tracking for admin dashboard
+  deliveryStatus: {
+    assigned: {
+      type: Boolean,
+      default: false,
+    },
+    accepted: {
+      type: Boolean,
+      default: false,
+    },
+    pickedUp: {
+      type: Boolean,
+      default: false,
+    },
+    delivered: {
+      type: Boolean,
+      default: false,
+    },
   },
   totalAmount: {
     type: Number,
@@ -85,7 +103,70 @@ const orderSchema = new mongoose.Schema({
     paymentGateway: String,
     paidAt: Date,
   },
+  deliveryInfo: {
+    agentId: {
+      type: String,
+      ref: "DeliveryAgent",
+      default: null,
+    },
+    assignedAt: {
+      type: Date,
+      default: null,
+    },
+    acceptedAt: {
+      type: Date,
+      default: null,
+    },
+    pickedUpAt: {
+      type: Date,
+      default: null,
+    },
+    deliveredAt: {
+      type: Date,
+      default: null,
+    },
+    estimatedDeliveryTime: {
+      type: Date,
+      default: null,
+    },
+    deliveryNotes: {
+      type: String,
+      default: "",
+    },
+    customerLocation: {
+      latitude: Number,
+      longitude: Number,
+    },
+    trackingUpdates: [{
+      status: String,
+      message: String,
+      timestamp: {
+        type: Date,
+        default: Date.now,
+      },
+      location: {
+        latitude: Number,
+        longitude: Number,
+      },
+    }],
+  },
   notes: String,
+  rating: {
+    value: {
+      type: Number,
+      min: 1,
+      max: 5,
+      default: null
+    },
+    review: {
+      type: String,
+      default: ""
+    },
+    ratedAt: {
+      type: Date,
+      default: null
+    }
+  },
   createdAt: {
     type: Date,
     default: Date.now,
@@ -106,5 +187,16 @@ orderSchema.pre("save", function (next) {
   next();
 });
 
+// Ensure orderNumber is always generated
+orderSchema.pre("validate", function (next) {
+  if (!this.orderNumber) {
+    const timestamp = Date.now().toString().slice(-6);
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+    this.orderNumber = `ORD${timestamp}${random}`;
+  }
+  next();
+});
+
 module.exports = mongoose.model("Order", orderSchema);
+
 

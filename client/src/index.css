@@ -9,7 +9,7 @@
 
   /* Original Theme Colors */
   --accent:#7b2e2e;
-  --accent-hover: #4d2b2b;
+  --accent-hover: #4a1010;
   --bg-light: #f9f7fa;
   --input-bg: #f5eef6;
   --text-color: #4e2323;
@@ -1218,7 +1218,7 @@ body.theme-bakery {
 /* ===== ENHANCED BAKERY AUTHENTICATION FORMS ===== */
 .bk-auth-wrapper {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f3e9dd 0%, #f8f2ea 50%, #f0e6d2 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #fefefe 50%, #f9f9f9 100%);
   background-attachment: fixed;
   display: flex;
   align-items: center;
@@ -1249,7 +1249,7 @@ body.theme-bakery {
 }
 
 .bk-auth-card {
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 1.0);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(234, 217, 201, 0.3);
@@ -1281,7 +1281,7 @@ body.theme-bakery {
 
 .bk-auth-image {
   flex: 0 0 50%;
-  background: linear-gradient(135deg, #f3e7dc 0%, #f8f2ea 100%);
+  background: linear-gradient(135deg, #ffffff 0%, #fefefe 100%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1623,32 +1623,31 @@ body.theme-bakery {
   }
 }
 
-/* Dark mode support (optional) */
+/* Force light theme for login page even in OS dark mode */
 @media (prefers-color-scheme: dark) {
   .bk-auth-wrapper {
-    background: linear-gradient(135deg, #2c1810 0%, #3d2418 50%, #2a1a0e 100%);
+    background: linear-gradient(135deg, #ffffff 0%, #fefefe 50%, #f9f9f9 100%);
   }
   
   .bk-auth-card {
-    background: rgba(45, 35, 25, 0.95);
-    border-color: rgba(139, 94, 52, 0.3);
+    background: rgba(255, 255, 255, 1);
+    border-color: rgba(234, 217, 201, 0.3);
   }
   
   .bk-auth-title {
-    background: linear-gradient(135deg, #f3e9dd 0%, #d4c4a8 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--text, #3f2d23);
+    background: none;
+    -webkit-text-fill-color: initial;
   }
   
   .bk-auth-input {
-    background: rgba(60, 45, 35, 0.6);
-    border-color: rgba(139, 94, 52, 0.4);
-    color: #f3e9dd;
+    background: rgba(245, 239, 235, 0.9);
+    border-color: rgba(139, 94, 52, 0.15);
+    color: var(--text, #3f2d23);
   }
   
   .bk-auth-input::placeholder {
-    color: #a09080;
+    color: rgba(63, 45, 35, 0.6);
   }
 }
 
@@ -2062,6 +2061,16 @@ select:focus {
 option {
   background: #fffaf3;        /* light beige background for options */
   color: #5c4033;             /* brown text */
+}
+
+/* ===== ANIMATIONS ===== */
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 

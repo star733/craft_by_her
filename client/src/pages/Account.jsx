@@ -21,6 +21,7 @@ import "react-toastify/dist/ReactToastify.css";
 export default function Account() {
   const navigate = useNavigate();
   const [user, setUser] = useState(null);
+  const [userName, setUserName] = useState("");
   const [cart, setCart] = useState({ items: [], totalAmount: 0 });
   const [wishlist, setWishlist] = useState({ products: [] });
   const [orders, setOrders] = useState([]);
@@ -29,10 +30,17 @@ export default function Account() {
 
   // Listen for tab change requests from Overview quick actions
   useEffect(() => {
+    // Support programmatic tab changes
     const handler = (e) => {
       if (e?.detail) setTab(e.detail);
     };
     window.addEventListener("acct:setTab", handler);
+
+    // Read tab from URL on mount
+    const params = new URLSearchParams(window.location.search);
+    const initialTab = params.get("tab");
+    if (initialTab) setTab(initialTab);
+
     return () => window.removeEventListener("acct:setTab", handler);
   }, []);
 
@@ -51,8 +59,11 @@ export default function Account() {
       setLoading(true);
       const token = await auth.currentUser.getIdToken();
 
-      // Fetch cart, wishlist, and orders in parallel
-      const [cartResponse, wishlistResponse, ordersResponse] = await Promise.all([
+      // Fetch user profile, cart, wishlist, and orders in parallel
+      const [profileResponse, cartResponse, wishlistResponse, ordersResponse] = await Promise.all([
+        fetch("http://localhost:5000/api/auth/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
         fetch("http://localhost:5000/api/cart", {
           headers: { Authorization: `Bearer ${token}` },
         }),
@@ -63,6 +74,20 @@ export default function Account() {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
+
+      // Get name from backend profile
+      if (profileResponse.ok) {
+        const profileData = await profileResponse.json();
+        const backendName = profileData.user?.name;
+        const firebaseName = auth.currentUser.displayName;
+        const emailName = auth.currentUser.email?.split('@')[0];
+        setUserName(backendName || firebaseName || emailName || 'User');
+      } else {
+        // Fallback to Firebase name or email username
+        const firebaseName = auth.currentUser.displayName;
+        const emailName = auth.currentUser.email?.split('@')[0];
+        setUserName(firebaseName || emailName || 'User');
+      }
 
       if (cartResponse.ok) {
         const cartData = await cartResponse.json();
@@ -81,6 +106,10 @@ export default function Account() {
     } catch (error) {
       console.error("Error fetching user data:", error);
       toast.error("Failed to load account data");
+      // Set fallback name even on error
+      const firebaseName = auth.currentUser?.displayName;
+      const emailName = auth.currentUser?.email?.split('@')[0];
+      setUserName(firebaseName || emailName || 'User');
     } finally {
       setLoading(false);
     }
@@ -100,11 +129,11 @@ export default function Account() {
   const NavItem = ({ k, icon: Icon, children, count }) => (
     <button
       className={`acct-nav__item ${tab === k ? "active" : ""}`}
-      onClick={() => setTab(k)}
+      onClick={(e) => { e.preventDefault(); setTab(k); const url = new URL(window.location.href); url.searchParams.set("tab", k); window.history.replaceState({}, "", url); }}
     >
       <Icon size={18} />
       <span>{children}</span>
-      {count > 0 && <span className="acct-nav__count">{count}</span>}
+      {typeof count === "number" && count > 0 && <span className="acct-nav__count">{count}</span>}
     </button>
   );
 
@@ -122,14 +151,8 @@ export default function Account() {
       {/* Sidebar */}
       <aside className="acct-sidebar">
         <div className="acct-user">
-          <div className="acct-avatar">
-            {user?.displayName?.charAt(0) || user?.email?.charAt(0) || "U"}
-          </div>
-          <div className="acct-user__meta">
-            <div className="acct-user__name">
-              {user?.displayName || user?.email?.split("@")[0] || "User"}
-            </div>
-            <div className="acct-user__email">{user?.email}</div>
+          <div className="acct-avatar" style={{ margin: '0 auto' }}>
+            {userName?.charAt(0)?.toUpperCase() || user?.email?.charAt(0)?.toUpperCase() || "U"}
           </div>
         </div>
 
@@ -173,7 +196,7 @@ export default function Account() {
             onBrowse={() => navigate("/products")}
           />
         )}
-        {tab === "orders" && <OrdersSection orders={orders} />}
+        {tab === "orders" && <OrdersSection orders={orders} onRefresh={fetchUserData} />}
         {tab === "cart" && <CartSection cart={cart} onRefresh={fetchUserData} />}
         {tab === "wishlist" && <WishlistSection wishlist={wishlist} onRefresh={fetchUserData} />}
         {tab === "profile" && <ProfileSection user={user} />}
@@ -194,7 +217,7 @@ function Overview({ user, cart, wishlist, orders, onBrowse }) {
   };
   return (
     <>
-      <h1 className="acct-title">Welcome back, {user?.displayName || user?.email?.split("@")[0]}! 👋</h1>
+      <h1 className="acct-title">Welcome back, {userName}! 👋</h1>
       
       <div className="acct-grid">
         {/* Quick Stats */}
@@ -291,7 +314,7 @@ function Overview({ user, cart, wishlist, orders, onBrowse }) {
               {orders.length > 3 && (
                 <button 
                   className="bk-btn bk-btn--pill bk-btn--ghost"
-                  onClick={() => window.location.href = "/orders"}
+                  onClick={() => goto("orders")}
                 >
                   View All Orders
                 </button>
@@ -304,7 +327,8 @@ function Overview({ user, cart, wishlist, orders, onBrowse }) {
   );
 }
 
-function OrdersSection({ orders }) {
+function OrdersSection({ orders, onRefresh }) {
+  const navigate = useNavigate();
   return (
     <>
       <h1 className="acct-title">Your Orders</h1>
@@ -315,7 +339,7 @@ function OrdersSection({ orders }) {
           <p className="acct-muted">When you place an order, it will show up here.</p>
           <button 
             className="bk-btn bk-btn--pill bk-btn--primary" 
-            onClick={() => window.location.href = "/products"}
+            onClick={() => navigate("/products")}
           >
             Browse products
           </button>
@@ -358,27 +382,105 @@ function OrdersSection({ orders }) {
                   Items ({order.items.length}):
                 </div>
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {order.items.map((item, index) => (
-                    <div key={index} style={{ 
-                      fontSize: "12px", 
-                      background: "#f8f9fa", 
-                      padding: "4px 8px", 
-                      borderRadius: "4px" 
-                    }}>
-                      {item.title} × {item.quantity}
-                    </div>
-                  ))}
+                  {order.items.map((item, index) => {
+                    const title = item.title || (item.productId && item.productId.title) || "Product";
+                    const image = item.image || (item.productId && item.productId.image);
+                    return (
+                      <div key={index} style={{ 
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        fontSize: "12px", 
+                        background: "#f8f9fa", 
+                        padding: "4px 8px", 
+                        borderRadius: "4px" 
+                      }}>
+                        <div style={{ 
+                          width: "24px", 
+                          height: "24px", 
+                          borderRadius: "4px",
+                          overflow: "hidden",
+                          background: "#eee",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center"
+                        }}>
+                          {image ? (
+                            <img
+                              src={`http://localhost:5000/uploads/${image}`}
+                              alt={title}
+                              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                            />
+                          ) : (
+                            <span style={{ fontSize: "9px", color: "#999" }}>No</span>
+                          )}
+                        </div>
+                        <span>{title} × {item.quantity}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               
               <div style={{ display: "flex", gap: "8px" }}>
                 <button 
                   className="bk-btn bk-btn--pill bk-btn--ghost"
-                  onClick={() => window.location.href = `/order-confirmation?orderId=${order._id}`}
+                  onClick={() => navigate(`/order-confirmation/${order._id}`, { state: { order } })}
                 >
                   <FiEye size={16} />
                   View Details
                 </button>
+                {!["shipped", "delivered", "cancelled"].includes(order.orderStatus) && (
+                  <button
+                    className="bk-btn bk-btn--pill bk-btn--danger"
+                    onClick={async () => {
+                      try {
+                        const token = await auth.currentUser.getIdToken();
+                        const resp = await fetch(`http://localhost:5000/api/orders/${order._id}/cancel`, {
+                          method: "PUT",
+                          headers: { Authorization: `Bearer ${token}` }
+                        });
+                        if (!resp.ok) {
+                          const err = await resp.json().catch(() => ({}));
+                          throw new Error(err.error || "Failed to cancel order");
+                        }
+                        toast.success("Order cancelled");
+                        onRefresh();
+                      } catch (e) {
+                        console.error("Cancel error:", e);
+                        toast.error(e.message || "Unable to cancel order");
+                      }
+                    }}
+                  >
+                    Cancel Order
+                  </button>
+                )}
+                {order.orderStatus === "cancelled" && (
+                  <button
+                    className="bk-btn bk-btn--pill bk-btn--danger"
+                    onClick={async () => {
+                      if (!confirm("Delete this cancelled order? This cannot be undone.")) return;
+                      try {
+                        const token = await auth.currentUser.getIdToken();
+                        const resp = await fetch(`http://localhost:5000/api/orders/${order._id}`, {
+                          method: "DELETE",
+                          headers: { Authorization: `Bearer ${token}` },
+                        });
+                        if (!resp.ok) {
+                          const err = await resp.json().catch(() => ({}));
+                          throw new Error(err.error || "Failed to delete order");
+                        }
+                        toast.success("Order deleted");
+                        onRefresh();
+                      } catch (e) {
+                        console.error("Delete error:", e);
+                        toast.error(e.message || "Unable to delete order");
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -419,7 +521,7 @@ function CartSection({ cart, onRefresh }) {
           <p className="acct-muted">Add some delicious items to your cart!</p>
           <button 
             className="bk-btn bk-btn--pill bk-btn--primary" 
-            onClick={() => window.location.href = "/products"}
+            onClick={() => navigate("/products")}
           >
             Browse products
           </button>
@@ -499,7 +601,7 @@ function CartSection({ cart, onRefresh }) {
                 <button 
                   className="bk-btn bk-btn--icon"
                   onClick={() => {
-                    const pid = item.productId;
+                    const pid = item.productId?._id || item.productId;
                     if (!pid) {
                       toast.error("Product not available");
                       return;
@@ -629,7 +731,7 @@ function WishlistSection({ wishlist, onRefresh }) {
           </p>
           <button 
             className="bk-btn bk-btn--pill bk-btn--primary" 
-            onClick={() => window.location.href = "/products"}
+            onClick={() => navigate("/products")}
           >
             Browse products
           </button>
@@ -706,7 +808,7 @@ function ProfileSection({ user }) {
               Display Name
             </label>
             <div style={{ padding: "12px", background: "#f8f9fa", borderRadius: "8px", fontSize: "16px" }}>
-              {user?.displayName || "Not set"}
+              {userName || "Not set"}
             </div>
           </div>
           
@@ -743,14 +845,232 @@ function ProfileSection({ user }) {
 }
 
 function Addresses() {
+  const [addresses, setAddresses] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [showForm, setShowForm] = React.useState(false);
+  const [saving, setSaving] = React.useState(false);
+  const [form, setForm] = React.useState({
+    label: "Home",
+    name: "",
+    phone: "",
+    address: { street: "", city: "", state: "", pincode: "", landmark: "" },
+    isDefault: false,
+  });
+
+  // Load addresses on mount
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const resp = await fetch("http://localhost:5000/api/addresses", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          setAddresses(Array.isArray(data.addresses) ? data.addresses : []);
+        }
+      } catch (e) {
+        console.error("Failed to load addresses", e);
+        toast.error("Unable to load addresses");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const refresh = async () => {
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const resp = await fetch("http://localhost:5000/api/addresses", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        setAddresses(Array.isArray(data.addresses) ? data.addresses : []);
+      }
+    } catch {}
+  };
+
+  const handleFormChange = (path, value) => {
+    if (path.includes(".")) {
+      const [parent, child] = path.split(".");
+      setForm((prev) => ({ ...prev, [parent]: { ...prev[parent], [child]: value } }));
+    } else {
+      setForm((prev) => ({ ...prev, [path]: value }));
+    }
+  };
+
+  const handleSave = async () => {
+    // Basic validation
+    if (!form.address.street || !form.address.city || !form.address.state || !form.address.pincode) {
+      toast.error("Please fill complete address");
+      return;
+    }
+    try {
+      setSaving(true);
+      const token = await auth.currentUser.getIdToken();
+      const resp = await fetch("http://localhost:5000/api/addresses", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(form),
+      });
+      if (!resp.ok) {
+        const err = await resp.json();
+        throw new Error(err.error || "Failed to save address");
+      }
+      toast.success("Address saved");
+      setShowForm(false);
+      setForm({ label: "Home", name: "", phone: "", address: { street: "", city: "", state: "", pincode: "", landmark: "" }, isDefault: false });
+      await refresh();
+    } catch (e) {
+      console.error("Save address error", e);
+      toast.error(e.message || "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const setDefault = async (id) => {
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const resp = await fetch(`http://localhost:5000/api/addresses/${id}/default`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (resp.ok) {
+        toast.success("Default address updated");
+        await refresh();
+      }
+    } catch (e) {
+      toast.error("Failed to set default");
+    }
+  };
+
+  const removeAddress = async (id) => {
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const resp = await fetch(`http://localhost:5000/api/addresses/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (resp.ok) {
+        toast.success("Address removed");
+        await refresh();
+      }
+    } catch (e) {
+      toast.error("Failed to remove address");
+    }
+  };
+
   return (
     <>
       <h1 className="acct-title">Addresses</h1>
-      <div className="acct-card">
-        <div className="acct-card__title">Saved Addresses</div>
-        <p className="acct-muted">Add your delivery address to checkout faster.</p>
-        <button className="bk-btn bk-btn--pill bk-btn--ghost">Add Address</button>
+
+      <div className="acct-card" style={{ marginBottom: "16px" }}>
+        <div className="acct-card__title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span>Saved Addresses</span>
+          <button className="bk-btn bk-btn--pill bk-btn--ghost" onClick={() => setShowForm((s) => !s)}>
+            {showForm ? "Close" : "Add Address"}
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="acct-muted">Loading...</p>
+        ) : addresses.length === 0 ? (
+          <p className="acct-muted">No saved addresses yet.</p>
+        ) : (
+          <div style={{ display: "grid", gap: "12px" }}>
+            {addresses.map((a) => (
+              <div key={a._id} style={{ border: "1px solid #e0e0e0", borderRadius: "8px", padding: "12px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 600 }}>
+                    {a.label} {a.isDefault && <span style={{ color: "#28a745", fontSize: "12px", marginLeft: 8 }}>(Default)</span>}
+                  </div>
+                  <div style={{ fontSize: "14px", color: "#555" }}>{a.name} {a.phone && `· ${a.phone}`}</div>
+                  <div style={{ fontSize: "14px", color: "#555", marginTop: 4 }}>
+                    {a.address?.street}<br />{a.address?.city}, {a.address?.state} {a.address?.pincode}
+                    {a.address?.landmark ? <><br />Landmark: {a.address.landmark}</> : null}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  {!a.isDefault && (
+                    <button className="bk-btn bk-btn--pill bk-btn--ghost" onClick={() => setDefault(a._id)}>Set Default</button>
+                  )}
+                  <button className="bk-btn bk-btn--icon bk-btn--danger" onClick={() => removeAddress(a._id)} title="Delete" aria-label="Delete">
+                    <FiTrash2 size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      {showForm && (
+        <div className="acct-card">
+          <div className="acct-card__title">Add New Address</div>
+          <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>Label</label>
+                <select value={form.label} onChange={(e) => handleFormChange("label", e.target.value)} style={{ width: "100%", padding: 10, border: "1px solid #ddd", borderRadius: 8 }}>
+                  <option>Home</option>
+                  <option>Work</option>
+                  <option>Other</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>Phone</label>
+                <input value={form.phone} onChange={(e) => handleFormChange("phone", e.target.value)} style={{ width: "100%", padding: 10, border: "1px solid #ddd", borderRadius: 8 }} placeholder="10-digit phone" />
+              </div>
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>Recipient Name</label>
+              <input value={form.name} onChange={(e) => handleFormChange("name", e.target.value)} style={{ width: "100%", padding: 10, border: "1px solid #ddd", borderRadius: 8 }} placeholder="Full name" />
+            </div>
+
+            <div>
+              <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>Street</label>
+              <textarea value={form.address.street} onChange={(e) => handleFormChange("address.street", e.target.value)} style={{ width: "100%", padding: 10, border: "1px solid #ddd", borderRadius: 8, minHeight: 70 }} placeholder="House, street, area" />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>City</label>
+                <input value={form.address.city} onChange={(e) => handleFormChange("address.city", e.target.value)} style={{ width: "100%", padding: 10, border: "1px solid #ddd", borderRadius: 8 }} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>State</label>
+                <input value={form.address.state} onChange={(e) => handleFormChange("address.state", e.target.value)} style={{ width: "100%", padding: 10, border: "1px solid #ddd", borderRadius: 8 }} />
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>Pincode</label>
+                <input value={form.address.pincode} onChange={(e) => handleFormChange("address.pincode", e.target.value)} style={{ width: "100%", padding: 10, border: "1px solid #ddd", borderRadius: 8 }} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 14, marginBottom: 4 }}>Landmark</label>
+                <input value={form.address.landmark} onChange={(e) => handleFormChange("address.landmark", e.target.value)} style={{ width: "100%", padding: 10, border: "1px solid #ddd", borderRadius: 8 }} />
+              </div>
+            </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input type="checkbox" checked={form.isDefault} onChange={(e) => handleFormChange("isDefault", e.target.checked)} />
+              Set as default
+            </label>
+
+            <div style={{ display: "flex", gap: 12, justifyContent: "flex-end" }}>
+              <button className="bk-btn bk-btn--pill bk-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
+              <button className="bk-btn bk-btn--pill bk-btn--primary" onClick={handleSave} disabled={saving}>
+                {saving ? "Saving..." : "Save Address"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

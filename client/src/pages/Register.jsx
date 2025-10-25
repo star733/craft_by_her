@@ -157,7 +157,7 @@ export default function Register() {
     <div className="bk-auth-wrapper">
       <div className="bk-auth-card">
         <div className="bk-auth-image">
-          <img src="/images/login-side.jpg" alt="Register Visual" />
+          <img src="/images/login-side.jpeg" alt="Register Visual" />
         </div>
 
         <div className="bk-auth-form">

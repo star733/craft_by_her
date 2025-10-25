@@ -26,11 +26,14 @@ export default function RequireUserAuth({ children }) {
           const data = await response.json();
           setUserRole(data.user?.role || 'buyer');
         } else {
-          setUserRole('buyer'); // Default to buyer if API fails
+          // API failed, default to buyer role
+          console.log('Auth API not available, using default role');
+          setUserRole('buyer');
         }
       } catch (error) {
-        console.error('Error checking user role:', error);
-        setUserRole('buyer'); // Default to buyer on error
+        // Network error or other issues, default to buyer role
+        console.log('Auth API error, using default role:', error.message);
+        setUserRole('buyer');
       } finally {
         setRoleLoading(false);
       }

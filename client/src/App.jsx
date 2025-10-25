@@ -3,6 +3,7 @@ import React from "react";
 import { Routes, Route, useLocation } from "react-router-dom";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import "./styles/razorpay-fixes.css";
 
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
@@ -23,22 +24,28 @@ import Wishlist from "./pages/Wishlist";
 import CartPrompt from "./pages/CartPrompt";
 import WishlistPrompt from "./pages/WishlistPrompt";
 import Checkout from "./pages/Checkout";
+import PaymentSelection from "./pages/PaymentSelection";
 import Payment from "./pages/Payment";
 import OrderConfirmation from "./pages/OrderConfirmation";
 import Orders from "./pages/Orders";
+import TrackOrder from "./pages/TrackOrder.jsx";
 import Mission from "./pages/Mission";
 import RequireAuth from "./routes/RequireAuth";
 import RequireUserAuth from "./routes/RequireUserAuth";
+import DeliveryLogin from "./pages/DeliveryLogin";
+import DeliveryDashboard from "./pages/DeliveryDashboard";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 export default function App() {
   const location = useLocation();
 
-  // ✅ Hide Navbar & Footer for admin pages
+  // ✅ Hide Navbar & Footer for admin pages and delivery pages
   const isAdminPage = location.pathname.startsWith("/admin");
+  const isDeliveryPage = location.pathname.startsWith("/delivery");
 
   return (
     <>
-      {!isAdminPage && <Navbar />}
+      {!isAdminPage && !isDeliveryPage && <Navbar />}
       <main className="min-h-[80vh] px-4">
         <Routes>
           <Route path="/" element={<Home />} />
@@ -57,14 +64,19 @@ export default function App() {
           <Route path="/cart/authenticated" element={<RequireUserAuth><Cart /></RequireUserAuth>} />
           <Route path="/wishlist/authenticated" element={<RequireUserAuth><Wishlist /></RequireUserAuth>} />
           <Route path="/checkout" element={<RequireUserAuth><Checkout /></RequireUserAuth>} />
+          <Route path="/payment-selection" element={<RequireUserAuth><PaymentSelection /></RequireUserAuth>} />
           <Route path="/payment" element={<RequireUserAuth><Payment /></RequireUserAuth>} />
           <Route path="/order-confirmation" element={<RequireUserAuth><OrderConfirmation /></RequireUserAuth>} />
+          <Route path="/order-confirmation/:orderId" element={<RequireUserAuth><OrderConfirmation /></RequireUserAuth>} />
           <Route path="/orders" element={<RequireUserAuth><Orders /></RequireUserAuth>} />
+          <Route path="/track/:orderId" element={<ErrorBoundary><RequireUserAuth><TrackOrder /></RequireUserAuth></ErrorBoundary>} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/users" element={<UserManagement />} />
+          <Route path="/delivery-login" element={<DeliveryLogin />} />
+          <Route path="/delivery-dashboard" element={<DeliveryDashboard />} />
         </Routes>
       </main>
-      {!isAdminPage && <Footer />}
+      {!isAdminPage && !isDeliveryPage && <Footer />}
       <ToastContainer
         position="bottom-center"
         hideProgressBar

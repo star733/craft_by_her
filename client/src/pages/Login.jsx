@@ -35,36 +35,38 @@ export default function Login() {
   };
 
   // ---------- Backend sync ----------
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
   const syncProfile = async (extra = {}) => {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const idToken = await getFreshToken();
-    if (!idToken) return;
-
-    const res = await fetch("http://localhost:5000/api/auth/sync", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({
-        name: user.displayName || "",
-        email: user.email,
-        phone: extra.phone || "",
-        photoURL: user.photoURL || "",
-        provider: user.providerData?.[0]?.providerId || "password",
-      }),
-    });
-
     try {
-      const data = await res.json();
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const idToken = await getFreshToken();
+      if (!idToken) return;
+
+      const res = await fetch(`${API_BASE}/api/auth/sync`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          name: user.displayName || "",
+          email: user.email,
+          phone: extra.phone || "",
+          photoURL: user.photoURL || "",
+          provider: user.providerData?.[0]?.providerId || "password",
+        }),
+      });
+
+      const data = await res.json().catch(() => null);
       console.log("SYNC result:", data);
       if (data?.ok && data.user) {
         localStorage.setItem("craftedbyher_user", JSON.stringify(data.user));
       }
     } catch (e) {
-      console.warn("sync parse failed", e);
+      console.warn("sync failed:", e?.message || e);
+      // Do not throw to keep UI flow alive when backend is down
     }
   };
 
@@ -127,7 +129,7 @@ const idToken = await user.getIdToken();
 
 // Fetch role from backend
 // ✅ Always sync first (creates/updates user in DB)
-await fetch("http://localhost:5000/api/auth/sync", {
+await fetch(`${API_BASE}/api/auth/sync`, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
@@ -145,7 +147,7 @@ toast.dismiss();
 toast.success("Login successful!", { autoClose: 1200 });
 
 // ✅ Now fetch role
-const res = await fetch("http://localhost:5000/api/auth/me", {
+const res = await fetch(`${API_BASE}/api/auth/me`, {
   headers: { Authorization: `Bearer ${idToken}` },
 });
 const { user: profile } = await res.json();
@@ -164,15 +166,21 @@ const { user: profile } = await res.json();
       syncProfile?.();
     } catch (err) {
       console.error("Email login error:", err);
-      const msg =
-        {
-          "auth/invalid-credential": "Invalid email or password.",
-          "auth/user-not-found": "No account found for this email.",
-          "auth/wrong-password": "Wrong password.",
-          "auth/too-many-requests": "Too many attempts. Please wait and try again.",
-          "auth/email-not-verified": "Please verify your email before continuing.",
-        }[err?.code] || err?.message || "Login failed";
-      toast.error(msg, { className: "custom-toast", autoClose: 2500 });
+      
+      // Check if it's a network error
+      if (err.message?.includes('Failed to fetch') || err.message?.includes('ERR_CONNECTION_REFUSED')) {
+        toast.error("Cannot connect to server. Please check your internet connection.", { className: "custom-toast", autoClose: 3000 });
+      } else {
+        const msg =
+          {
+            "auth/invalid-credential": "Invalid email or password.",
+            "auth/user-not-found": "No account found for this email.",
+            "auth/wrong-password": "Wrong password.",
+            "auth/too-many-requests": "Too many attempts. Please wait and try again.",
+            "auth/email-not-verified": "Please verify your email before continuing.",
+          }[err?.code] || err?.message || "Login failed";
+        toast.error(msg, { className: "custom-toast", autoClose: 2500 });
+      }
     } finally {
       setLoadingEmail(false);
     }
@@ -195,7 +203,7 @@ const { user: profile } = await res.json();
       await syncProfile();
 
       // Fetch role
-      const res = await fetch("http://localhost:5000/api/auth/me", {
+      const res = await fetch(`${API_BASE}/api/auth/me`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
 
@@ -223,7 +231,11 @@ toast.success("Login successful!", { autoClose: 1200 });
       }
     } catch (err) {
       console.error("Google login error:", err);
-      toast.error("Google Sign-In failed", { className: "custom-toast", autoClose: 2500 });
+      const isConnRefused = /Failed to fetch|NetworkError|ERR_CONNECTION_REFUSED/i.test(err?.message || "");
+      const msg = isConnRefused
+        ? `Backend not reachable at ${API_BASE}. Please start the server (npm start in server).`
+        : "Google Sign-In failed";
+      toast.error(msg, { className: "custom-toast", autoClose: 3000 });
     } finally {
       setLoadingGoogle(false);
     }
@@ -239,7 +251,21 @@ toast.success("Login successful!", { autoClose: 1200 });
     <div className="bk-auth-wrapper">
       <div className="bk-auth-card">
         <div className="bk-auth-image">
-          <img src="/images/login-side.jpg" alt="Login Visual" />
+          {/* Use Vite base-aware path with graceful fallback */}
+          <img
+            src={`${import.meta.env.BASE_URL || '/'}images/login-side.jpg`}
+            alt="Login Visual"
+            onError={(e) => {
+              const target = e.currentTarget;
+              // Try an alternate path once; then hide if still failing
+              if (!target.dataset.fallbackTried) {
+                target.dataset.fallbackTried = '1';
+                target.src = '/images/login-side.jpeg';
+              } else {
+                target.style.display = 'none';
+              }
+            }}
+          />
         </div>
 
         <div className="bk-auth-form">
@@ -320,6 +346,46 @@ toast.success("Login successful!", { autoClose: 1200 });
               <img src="/icons/google-white.svg" alt="Google" style={{ width: 20, height: 20 }} />
               {loadingGoogle ? "Connecting…" : "Sign in with Google"}
             </button>
+          </div>
+
+          {/* Delivery Login Link */}
+          <div style={{ 
+            textAlign: "center", 
+            marginTop: "30px", 
+            paddingTop: "20px", 
+            borderTop: "1px solid #eee" 
+          }}>
+            <p style={{ 
+              fontSize: "14px", 
+              color: "#666", 
+              marginBottom: "10px" 
+            }}>
+              Are you a delivery partner?
+            </p>
+            <Link 
+              to="/delivery-login" 
+              style={{
+                color: "#5c4033",
+                textDecoration: "none",
+                fontSize: "14px",
+                fontWeight: "600",
+                padding: "8px 16px",
+                border: "1px solid #5c4033",
+                borderRadius: "6px",
+                display: "inline-block",
+                transition: "all 0.2s"
+              }}
+              onMouseOver={(e) => {
+                e.target.style.background = "#5c4033";
+                e.target.style.color = "white";
+              }}
+              onMouseOut={(e) => {
+                e.target.style.background = "transparent";
+                e.target.style.color = "#5c4033";
+              }}
+            >
+              🚚 Delivery Partner Login
+            </Link>
           </div>
 
           <ToastContainer />

@@ -95,6 +95,24 @@ const userSchema = new mongoose.Schema(
         default: true
       }
     },
+    // Saved delivery addresses
+    addresses: [
+      {
+        label: { type: String, enum: ['Home', 'Work', 'Other'], default: 'Home' },
+        name: { type: String, trim: true },
+        phone: { type: String, trim: true },
+        address: {
+          street: { type: String, trim: true },
+          city: { type: String, trim: true },
+          state: { type: String, trim: true },
+          pincode: { type: String, trim: true },
+          landmark: { type: String, trim: true }
+        },
+        isDefault: { type: Boolean, default: false },
+        createdAt: { type: Date, default: Date.now },
+        updatedAt: { type: Date, default: Date.now }
+      }
+    ],
     activities: [userActivitySchema],
     registrationIP: String,
     registrationUserAgent: String

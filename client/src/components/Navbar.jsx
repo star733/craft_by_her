@@ -7,6 +7,7 @@ import { auth } from "../firebase";
 export default function Navbar() {
   const [user, setUser] = useState(null);
   const [userRole, setUserRole] = useState(null);
+  const [userName, setUserName] = useState("");
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -36,18 +37,35 @@ export default function Navbar() {
           if (response.ok) {
             const data = await response.json();
             setUserRole(data.user?.role || 'buyer');
+            // Get name from backend first, then fallback to Firebase, then email username
+            const backendName = data.user?.name;
+            const firebaseName = user.displayName;
+            const emailName = user.email?.split('@')[0];
+            setUserName(backendName || firebaseName || emailName || 'User');
           } else {
+            // API failed, default to buyer role
+            console.log('Auth API not available, using default role');
             setUserRole('buyer');
+            // Fallback to Firebase name or email username
+            const firebaseName = user.displayName;
+            const emailName = user.email?.split('@')[0];
+            setUserName(firebaseName || emailName || 'User');
           }
         } catch (error) {
-          console.error('Error checking user role:', error);
+          // Network error or other issues, default to buyer role
+          console.log('Auth API error, using default role:', error.message);
           setUserRole('buyer');
+          // Fallback to Firebase name or email username
+          const firebaseName = user.displayName;
+          const emailName = user.email?.split('@')[0];
+          setUserName(firebaseName || emailName || 'User');
         }
       } else {
         setUserRole(null);
+        setUserName("");
       }
     });
-
+    
     return () => unsubscribe();
   }, [location.pathname]);
 
@@ -124,9 +142,10 @@ export default function Navbar() {
                     onClick={handleAccountClick}
                     aria-label="Account"
                     title="Account"
-                  >
+                  >  
                     <FiUser size={20} />
                   </button>
+                  
                 </>
               )}
 
@@ -149,12 +168,25 @@ export default function Navbar() {
                   >
                     <FiUser size={20} />
                   </button>
-                </>
+                </> 
               )}
 
-              {/* Account page: Show wishlist and cart icons */}
+              {/* Account page: Show user name, wishlist and cart icons */}
               {isAccountPage && userRole !== 'admin' && (
                 <>
+                  {user && (
+                    <span style={{
+                      fontSize: '14px',
+                      fontWeight: '500',
+                      color: '#5c4033',
+                      marginRight: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      Hi, {userName}
+                    </span>
+                  )}
                   <button
                     className="icon-btn"
                     onClick={handleWishlistClick}
@@ -171,11 +203,27 @@ export default function Navbar() {
                   >
                     <FiShoppingCart size={20} />
                   </button>
+                  
                 </>
               )}
             </>
           ) : (
             <>
+              {/* Display user name if logged in */}
+              {user && userRole !== 'admin' && (
+                <span style={{
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: '#5c4033',
+                  marginRight: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}>
+                  Hi, {user?.displayName || user?.providerData?.[0]?.displayName || 'User'}
+                </span>
+              )}
+
               {/* Full navigation on other pages - hide user features for admin */}
               {userRole !== 'admin' && (
                 <>

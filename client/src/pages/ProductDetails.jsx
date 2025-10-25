@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { auth } from "../firebase";
 import { toast } from "react-toastify";
 import { FiShare2, FiCopy, FiMail, FiMessageCircle, FiInstagram, FiFacebook, FiTwitter } from "react-icons/fi";
+import ProductRecommendations from "../components/ProductRecommendations";
 import "react-toastify/dist/ReactToastify.css";
 
 export default function ProductDetails() {
@@ -164,6 +165,18 @@ export default function ProductDetails() {
     } finally {
       setAddingToCart(false);
     }
+  };
+
+  const handleBuyNow = () => {
+    if (!selectedVariant || product?.stock <= 0) return;
+    const item = {
+      productId: product?._id || id,
+      title: product?.title || "",
+      image: product?.image || "",
+      variant: selectedVariant,
+      quantity: quantity || 1
+    };
+    navigate("/checkout", { state: { cartItems: [item] } });
   };
 
   const handleGoToCart = () => {
@@ -505,6 +518,18 @@ export default function ProductDetails() {
             </button>
 
             <button
+              onClick={handleBuyNow}
+              disabled={!selectedVariant || product.stock <= 0}
+              style={{
+                ...buttonPrimary,
+                backgroundColor: "#3e0e0e",
+                ...(product.stock <= 0 ? buttonDisabled : {}),
+              }}
+            >
+              ⚡ Buy Now
+            </button>
+
+            <button
               onClick={handleWishlistToggle}
               disabled={addingToWishlist}
               style={{
@@ -684,6 +709,14 @@ export default function ProductDetails() {
           )}
         </div>
       </div>
+
+      {/* Product Recommendations */}
+      {product && (
+        <ProductRecommendations 
+          productId={id}
+          title="You might also like"
+        />
+      )}
     </div>
   );
 }

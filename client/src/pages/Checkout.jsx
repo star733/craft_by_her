@@ -9,7 +9,6 @@ export default function Checkout() {
   const location = useLocation();
   const [cartItems, setCartItems] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState("cod");
   const [validationErrors, setValidationErrors] = useState({});
   const [buyerDetails, setBuyerDetails] = useState({
     name: "",
@@ -23,6 +22,11 @@ export default function Checkout() {
       landmark: "",
     },
   });
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [showNewAddressForm, setShowNewAddressForm] = useState(false);
+  const [saveThisAddress, setSaveThisAddress] = useState(true);
+  const [setAsDefault, setSetAsDefault] = useState(true);
+  const [selectedAddressId, setSelectedAddressId] = useState(null);
 
   useEffect(() => {
     // Check if user is logged in
@@ -32,12 +36,42 @@ export default function Checkout() {
       return;
     }
 
-    // Get cart items from location state or fetch from API
+    // Prefer any cart items passed via navigation state (e.g., Buy Now)
     if (location.state?.cartItems) {
       setCartItems(location.state.cartItems);
     } else {
+      // Only fetch server cart if NOT coming from Buy Now
       fetchCartItems();
     }
+
+    // Load saved addresses
+    (async () => {
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const resp = await fetch("http://localhost:5000/api/addresses", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          const addresses = Array.isArray(data.addresses) ? data.addresses : [];
+          setSavedAddresses(addresses);
+          // Pre-fill with default address if exists
+          const def = addresses.find((a) => a.isDefault) || addresses[0];
+          if (def) {
+            setSelectedAddressId(def._id);
+            setBuyerDetails({
+              name: def.name || auth.currentUser.displayName || "",
+              email: auth.currentUser.email || "",
+              phone: def.phone || "",
+              address: { ...def.address },
+            });
+            setShowNewAddressForm(false);
+          }
+        }
+      } catch (e) {
+        console.warn("Unable to load addresses", e);
+      }
+    })();
   }, [navigate, location.state]);
 
   const fetchCartItems = async () => {
@@ -63,7 +97,7 @@ export default function Checkout() {
       return sum + (item.variant.price * item.quantity);
     }, 0);
     
-    const shippingCharges = totalAmount >= 500 ? 0 : 50;
+    const shippingCharges = 50; // Fixed shipping charge
     const finalAmount = totalAmount + shippingCharges;
     
     return { totalAmount, shippingCharges, finalAmount };
@@ -181,7 +215,7 @@ export default function Checkout() {
     return isValid;
   };
 
-  const handlePlaceOrder = async () => {
+  const handleProceedToPayment = async () => {
     if (!validateForm()) return;
 
     try {
@@ -189,48 +223,48 @@ export default function Checkout() {
       const user = auth.currentUser;
       const token = await user.getIdToken();
 
-      const orderData = {
-        items: cartItems,
-        buyerDetails,
-        paymentMethod,
-        notes: "",
-      };
+      // If user entered a new address and chose to save it, persist to profile first
+      if ((!selectedAddressId || showNewAddressForm) && saveThisAddress) {
+        try {
+          const saveResp = await fetch("http://localhost:5000/api/addresses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              label: "Home",
+              name: buyerDetails.name,
+              phone: buyerDetails.phone,
+              address: buyerDetails.address,
+              isDefault: !!setAsDefault,
+            }),
+          });
+          if (saveResp.ok) {
+            const data = await saveResp.json().catch(() => ({}));
+            if (Array.isArray(data.addresses)) {
+              setSavedAddresses(data.addresses);
+              const def = data.addresses.find((a) => a.isDefault) || data.addresses[data.addresses.length - 1];
+              if (def) {
+                setSelectedAddressId(def._id);
+              }
+            }
+          } else {
+            const er = await saveResp.json().catch(() => ({}));
+            console.warn("Address not saved", er);
+          }
+        } catch (e) {
+          console.warn("Skipping save address due to error", e);
+        }
+      }
 
-      console.log("Creating order:", orderData);
-
-      const response = await fetch("http://localhost:5000/api/orders/create", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(orderData),
+      // Navigate to payment selection page with cart and buyer details
+      navigate("/payment-selection", {
+        state: {
+          cartItems,
+          buyerDetails
+        }
       });
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || "Failed to create order");
-      }
-
-      const result = await response.json();
-      console.log("Order created:", result);
-
-      // Redirect based on payment method
-      if (paymentMethod === "online") {
-        navigate("/payment", { 
-          state: { 
-            order: result.order,
-            amount: calculateTotals().finalAmount 
-          } 
-        });
-      } else {
-        navigate("/order-confirmation", { 
-          state: { order: result.order } 
-        });
-      }
     } catch (error) {
-      console.error("Error placing order:", error);
-      toast.error(`Failed to place order: ${error.message}`);
+      console.error("Error:", error);
+      toast.error(`Error: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -263,9 +297,142 @@ export default function Checkout() {
   }
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px" }}>
-      <h1 style={{ marginBottom: "30px", color: "#5c4033" }}>Checkout</h1>
+    <div style={{ 
+      background: "linear-gradient(to bottom, #f8f9fa 0%, #ffffff 100%)", 
+      minHeight: "100vh",
+      paddingTop: "20px",
+      paddingBottom: "40px"
+    }}>
+      <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "0 20px" }}>
+        {/* Header */}
+        <div style={{ 
+          textAlign: "center", 
+          marginBottom: "30px",
+          paddingBottom: "20px",
+          borderBottom: "2px solid #e0e0e0"
+        }}>
+          <h1 style={{ 
+            color: "#5c4033", 
+            fontSize: "32px", 
+            fontWeight: "700",
+            marginBottom: "8px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "12px"
+          }}>
+            🛒 Secure Checkout
+          </h1>
+          <p style={{ color: "#666", fontSize: "14px" }}>Complete your order in just a few steps</p>
+        </div>
       
+      {/* Deliver to header + change */}
+      <div style={{ 
+        background: "linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)", 
+        padding: "20px", 
+        borderRadius: "16px", 
+        border: "2px solid #e3e8ef",
+        marginBottom: "20px", 
+        display: "flex", 
+        alignItems: "center", 
+        justifyContent: "space-between",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.05)"
+      }}>
+        <div style={{ fontSize: "14px" }}>
+          <div style={{ 
+            fontSize: "12px", 
+            color: "#888", 
+            textTransform: "uppercase", 
+            letterSpacing: "0.5px",
+            marginBottom: "4px"
+          }}>
+            📍 Delivery Address
+          </div>
+          <div style={{ fontWeight: "700", fontSize: "16px", marginBottom: "4px" }}>
+            {buyerDetails.name || auth.currentUser?.displayName || auth.currentUser?.providerData?.[0]?.displayName || auth.currentUser?.email}
+          </div>
+          <div style={{ color: "#555", lineHeight: "1.5" }}>
+            {buyerDetails.address.street ? (
+              <>
+                {buyerDetails.address.street}{buyerDetails.address.landmark ? `, Near ${buyerDetails.address.landmark}` : ""}, {buyerDetails.address.city}, {buyerDetails.address.state} - {buyerDetails.address.pincode}
+              </>
+            ) : (
+              <span style={{ color: "#999", fontStyle: "italic" }}>No address selected</span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={() => setShowNewAddressForm(prev => !prev)}
+          style={{ 
+            border: "2px solid #5c4033", 
+            color: "#5c4033", 
+            background: "white", 
+            padding: "10px 20px", 
+            borderRadius: "8px", 
+            cursor: "pointer", 
+            fontWeight: "700",
+            fontSize: "14px",
+            transition: "all 0.3s ease",
+            whiteSpace: "nowrap"
+          }}
+          onMouseEnter={(e) => {
+            e.target.style.background = "#5c4033";
+            e.target.style.color = "white";
+          }}
+          onMouseLeave={(e) => {
+            e.target.style.background = "white";
+            e.target.style.color = "#5c4033";
+          }}
+        >
+          {showNewAddressForm ? "📋 Use Saved" : "✏️ Change"}
+        </button>
+      </div>
+
+      {/* Saved addresses selector */}
+      {savedAddresses.length > 0 && !showNewAddressForm && (
+        <div style={{ background: "#fff", padding: 16, borderRadius: 12, border: "1px solid #eee", marginBottom: 16 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Select saved address</div>
+          <div style={{ display: "grid", gap: 8 }}>
+            {savedAddresses.map(addr => (
+              <label key={addr._id} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: 12, border: "1px solid #eee", borderRadius: 8 }}>
+                <input
+                  type="radio"
+                  name="address"
+                  checked={selectedAddressId === addr._id}
+                  onChange={() => {
+                    setSelectedAddressId(addr._id);
+                    setBuyerDetails({
+                      name: addr.name || auth.currentUser.displayName || "",
+                      email: auth.currentUser.email || "",
+                      phone: addr.phone || "",
+                      address: { ...addr.address },
+                    });
+                  }}
+                  style={{ marginTop: 4 }}
+                />
+                <div>
+                  <div style={{ fontWeight: 600 }}>{addr.name}</div>
+                  <div style={{ fontSize: 13, color: "#555" }}>{addr.address.street}{addr.address.landmark ? `, Near ${addr.address.landmark}` : ""}</div>
+                  <div style={{ fontSize: 13, color: "#555" }}>{addr.address.city}, {addr.address.state} - {addr.address.pincode}</div>
+                  <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>Phone: {addr.phone}</div>
+                  {addr.isDefault && (
+                    <span style={{ display: "inline-block", marginTop: 6, fontSize: 12, background: "#eef7ee", color: "#2e7d32", padding: "2px 8px", borderRadius: 999 }}>Default</span>
+                  )}
+                </div>
+              </label>
+            ))}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <button
+              onClick={() => { setShowNewAddressForm(true); setSelectedAddressId(null); }}
+              style={{ border: "1px dashed #5c4033", color: "#5c4033", background: "transparent", padding: "8px 12px", borderRadius: 8, cursor: "pointer", fontWeight: 600 }}
+            >
+              Use another address
+            </button>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "grid", gridTemplateColumns: "1fr 400px", gap: "30px" }}>
         {/* Left Column - Forms */}
         <div>
@@ -351,156 +518,201 @@ export default function Checkout() {
             </div>
             
             <h3 style={{ marginBottom: "16px", color: "#5c4033" }}>Delivery Address</h3>
-            
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                Street Address *
-              </label>
-              <textarea
-                value={buyerDetails.address.street}
-                onChange={(e) => handleInputChange("address.street", e.target.value)}
-                style={{
-                  width: "100%",
-                  padding: "12px",
-                  border: "1px solid #ddd",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  minHeight: "80px",
-                  resize: "vertical",
-                }}
-                placeholder="Enter your street address"
-              />
-            </div>
-            
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
-              <div>
-                <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                  City *
-                </label>
-                <input
-                  type="text"
-                  value={buyerDetails.address.city}
-                  onChange={(e) => handleInputChange("address.city", e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    border: "1px solid #ddd",
-                    borderRadius: "8px",
-                    fontSize: "14px",
-                  }}
-                  placeholder="Enter your city"
-                />
+
+            {/* Saved Addresses selector */}
+            {!!savedAddresses.length && (
+              <div style={{ marginBottom: 16, border: "1px solid #eee", borderRadius: 8, padding: 12 }}>
+                <div style={{ fontWeight: 600, marginBottom: 8 }}>Saved Addresses</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {savedAddresses.map((a) => (
+                    <label key={a._id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: 8, border: selectedAddressId === a._id ? "2px solid #5c4033" : "1px solid #ddd", borderRadius: 8 }}>
+                      <input
+                        type="radio"
+                        name="selectedAddress"
+                        checked={selectedAddressId === a._id}
+                        onChange={() => {
+                          setSelectedAddressId(a._id);
+                          setShowNewAddressForm(false);
+                          setBuyerDetails({
+                            name: a.name || auth.currentUser.displayName || "",
+                            email: auth.currentUser.email || "",
+                            phone: a.phone || "",
+                            address: { ...a.address },
+                          });
+                        }}
+                        style={{ marginTop: 4 }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 600 }}>
+                          {a.label} {a.isDefault && <span style={{ color: "#28a745", fontSize: 12, marginLeft: 6 }}>(Default)</span>}
+                        </div>
+                        <div style={{ fontSize: 14, color: "#555" }}>{a.name} {a.phone && `· ${a.phone}`}</div>
+                        <div style={{ fontSize: 14, color: "#555" }}>
+                          {a.address?.street}, {a.address?.city}, {a.address?.state} {a.address?.pincode}
+                          {a.address?.landmark ? `, Landmark: ${a.address.landmark}` : ""}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                <div style={{ marginTop: 10 }}>
+                  <button className="bk-btn bk-btn--pill bk-btn--ghost" onClick={() => { setShowNewAddressForm(true); setSelectedAddressId(null); }}>
+                    {showNewAddressForm ? "Using new address" : "Use another address"}
+                  </button>
+                </div>
               </div>
-              
-              <div>
-                <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                  State *
-                </label>
-                <input
-                  type="text"
-                  value={buyerDetails.address.state}
-                  onChange={(e) => handleInputChange("address.state", e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    border: "1px solid #ddd",
-                    borderRadius: "8px",
-                    fontSize: "14px",
-                  }}
-                  placeholder="Enter your state"
-                />
-              </div>
-            </div>
-            
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-              <div>
-                <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                  Pincode *
-                </label>
-                <input
-                  type="text"
-                  value={buyerDetails.address.pincode}
-                  onChange={(e) => handleInputChange("address.pincode", e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    border: validationErrors["address.pincode"] ? "2px solid #dc3545" : "1px solid #ddd",
-                    borderRadius: "8px",
-                    fontSize: "14px",
-                    backgroundColor: validationErrors["address.pincode"] ? "#fff5f5" : "white",
-                  }}
-                  placeholder="Enter pincode"
-                />
-                {validationErrors["address.pincode"] && (
-                  <div style={{ color: "#dc3545", fontSize: "12px", marginTop: "4px" }}>
-                    {validationErrors["address.pincode"]}
+            )}
+
+            {/* New Address Form (shown when none saved or user toggles) */}
+            {(!savedAddresses.length || showNewAddressForm || !selectedAddressId) && (
+              <>
+                <div style={{ marginBottom: "16px" }}>
+                  <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
+                    Street Address *
+                  </label>
+                  <textarea
+                    value={buyerDetails.address.street}
+                    onChange={(e) => handleInputChange("address.street", e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "12px",
+                      border: "1px solid #ddd",
+                      borderRadius: "8px",
+                      fontSize: "14px",
+                      minHeight: "80px",
+                      resize: "vertical",
+                    }}
+                    placeholder="Enter your street address"
+                  />
+                </div>
+                
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" }}>
+                  <div>
+                    <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
+                      City *
+                    </label>
+                    <input
+                      type="text"
+                      value={buyerDetails.address.city}
+                      onChange={(e) => handleInputChange("address.city", e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                      }}
+                      placeholder="Enter your city"
+                    />
                   </div>
-                )}
-              </div>
-              
-              <div>
-                <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                  Landmark (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={buyerDetails.address.landmark}
-                  onChange={(e) => handleInputChange("address.landmark", e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    border: "1px solid #ddd",
-                    borderRadius: "8px",
-                    fontSize: "14px",
-                  }}
-                  placeholder="Nearby landmark"
-                />
-              </div>
-            </div>
+                  
+                  <div>
+                    <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
+                      State *
+                    </label>
+                    <input
+                      type="text"
+                      value={buyerDetails.address.state}
+                      onChange={(e) => handleInputChange("address.state", e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                      }}
+                      placeholder="Enter your state"
+                    />
+                  </div>
+                </div>
+                
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                  <div>
+                    <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
+                      Pincode *
+                    </label>
+                    <input
+                      type="text"
+                      value={buyerDetails.address.pincode}
+                      onChange={(e) => handleInputChange("address.pincode", e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        border: validationErrors["address.pincode"] ? "2px solid #dc3545" : "1px solid #ddd",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                        backgroundColor: validationErrors["address.pincode"] ? "#fff5f5" : "white",
+                      }}
+                      placeholder="Enter pincode"
+                    />
+                    {validationErrors["address.pincode"] && (
+                      <div style={{ color: "#dc3545", fontSize: "12px", marginTop: "4px" }}>
+                        {validationErrors["address.pincode"]}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div>
+                    <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
+                      Landmark (Optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={buyerDetails.address.landmark}
+                      onChange={(e) => handleInputChange("address.landmark", e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "12px",
+                        border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        fontSize: "14px",
+                      }}
+                      placeholder="Nearby landmark"
+                    />
+                  </div>
+                </div>
+
+                {/* Save options */}
+                <div style={{ display: "flex", gap: 20, alignItems: "center", marginTop: 8 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="checkbox" checked={saveThisAddress} onChange={(e) => setSaveThisAddress(e.target.checked)} />
+                    Save this address to my profile
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="checkbox" checked={setAsDefault} onChange={(e) => setSetAsDefault(e.target.checked)} />
+                    Set as default
+                  </label>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* Payment Method */}
-          <div style={{ background: "#fff", padding: "24px", borderRadius: "12px", marginBottom: "24px" }}>
-            <h2 style={{ marginBottom: "20px", color: "#5c4033" }}>Payment Method</h2>
-            
-            <div style={{ display: "flex", gap: "20px" }}>
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="cod"
-                  checked={paymentMethod === "cod"}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  style={{ marginRight: "8px" }}
-                />
-                <div>
-                  <div style={{ fontWeight: "600", fontSize: "16px" }}>Cash on Delivery</div>
-                  <div style={{ fontSize: "14px", color: "#666" }}>Pay when your order arrives</div>
-                </div>
-              </label>
-              
-              <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
-                <input
-                  type="radio"
-                  name="paymentMethod"
-                  value="online"
-                  checked={paymentMethod === "online"}
-                  onChange={(e) => setPaymentMethod(e.target.value)}
-                  style={{ marginRight: "8px" }}
-                />
-                <div>
-                  <div style={{ fontWeight: "600", fontSize: "16px" }}>Online Payment</div>
-                  <div style={{ fontSize: "14px", color: "#666" }}>Pay now with dummy gateway</div>
-                </div>
-              </label>
-            </div>
-          </div>
         </div>
 
         {/* Right Column - Order Summary */}
         <div>
-          <div style={{ background: "#fff", padding: "24px", borderRadius: "12px", position: "sticky", top: "20px" }}>
-            <h2 style={{ marginBottom: "20px", color: "#5c4033" }}>Order Summary</h2>
+          <div style={{ 
+            background: "linear-gradient(135deg, #ffffff 0%, #fafafa 100%)", 
+            padding: "28px", 
+            borderRadius: "16px", 
+            position: "sticky", 
+            top: "20px",
+            border: "2px solid #e8e8e8",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.1)"
+          }}>
+            <h2 style={{ 
+              marginBottom: "24px", 
+              color: "#5c4033", 
+              fontSize: "24px", 
+              fontWeight: "700",
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              borderBottom: "2px solid #e8e8e8",
+              paddingBottom: "16px"
+            }}>
+              📋 Order Summary
+            </h2>
             
             {/* Cart Items */}
             <div style={{ marginBottom: "20px" }}>
@@ -539,53 +751,113 @@ export default function Checkout() {
             </div>
             
             {/* Price Breakdown */}
-            <div style={{ marginBottom: "20px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                <span>Subtotal:</span>
-                <span>₹{totalAmount}</span>
+            <div style={{ 
+              marginBottom: "24px",
+              background: "#f9f9f9",
+              padding: "16px",
+              borderRadius: "12px",
+              border: "1px solid #e8e8e8"
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "12px", fontSize: "15px" }}>
+                <span style={{ color: "#555" }}>Subtotal:</span>
+                <span style={{ fontWeight: "600" }}>₹{totalAmount}</span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                <span>Shipping:</span>
-                <span>{shippingCharges === 0 ? "Free" : `₹${shippingCharges}`}</span>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "16px", fontSize: "15px" }}>
+                <span style={{ color: "#555" }}>Shipping:</span>
+                <span style={{ fontWeight: "600", color: "#333" }}>
+                  ₹{shippingCharges}
+                </span>
               </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "18px", fontWeight: "600", color: "#5c4033", paddingTop: "12px", borderTop: "2px solid #5c4033" }}>
-                <span>Total:</span>
+              <div style={{ 
+                display: "flex", 
+                justifyContent: "space-between", 
+                fontSize: "20px", 
+                fontWeight: "700", 
+                color: "#5c4033", 
+                paddingTop: "16px", 
+                borderTop: "2px dashed #d0d0d0",
+                marginTop: "8px"
+              }}>
+                <span>Total Amount:</span>
                 <span>₹{finalAmount}</span>
               </div>
             </div>
             
             {/* Place Order Button */}
             <button
-              onClick={handlePlaceOrder}
+              onClick={handleProceedToPayment}
               disabled={loading}
               style={{
                 width: "100%",
-                padding: "16px",
-                background: loading ? "#ccc" : "#5c4033",
+                padding: "18px",
+                background: loading ? "#ccc" : "linear-gradient(135deg, #5c4033 0%, #7d5a47 100%)",
                 color: "white",
                 border: "none",
-                borderRadius: "8px",
-                fontSize: "16px",
-                fontWeight: "600",
+                borderRadius: "12px",
+                fontSize: "18px",
+                fontWeight: "700",
                 cursor: loading ? "not-allowed" : "pointer",
-                transition: "background-color 0.2s ease",
+                transition: "all 0.3s ease",
+                boxShadow: loading ? "none" : "0 4px 15px rgba(92, 64, 51, 0.3)",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "10px"
               }}
               onMouseEnter={(e) => {
                 if (!loading) {
-                  e.target.style.background = "#4a3429";
+                  e.target.style.transform = "translateY(-2px)";
+                  e.target.style.boxShadow = "0 6px 20px rgba(92, 64, 51, 0.4)";
                 }
               }}
               onMouseLeave={(e) => {
                 if (!loading) {
-                  e.target.style.background = "#5c4033";
+                  e.target.style.transform = "translateY(0)";
+                  e.target.style.boxShadow = "0 4px 15px rgba(92, 64, 51, 0.3)";
                 }
               }}
             >
-              {loading ? "Processing..." : paymentMethod === "cod" ? "Place Order (COD)" : "Proceed to Payment"}
+              {loading ? (
+                <>
+                  <span style={{ 
+                    display: "inline-block", 
+                    width: "16px", 
+                    height: "16px", 
+                    border: "2px solid white", 
+                    borderTopColor: "transparent", 
+                    borderRadius: "50%", 
+                    animation: "spin 1s linear infinite" 
+                  }}></span>
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <span>🔒</span>
+                  Place Order
+                </>
+              )}
             </button>
+            
+            {/* Security badge */}
+            <div style={{ 
+              textAlign: "center", 
+              marginTop: "16px", 
+              fontSize: "12px", 
+              color: "#666",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "6px"
+            }}>
+              <span style={{ color: "#28a745", fontSize: "14px" }}>✓</span>
+              100% Secure Payment
+            </div>
           </div>
         </div>
       </div>
+    </div>
     </div>
   );
 }

@@ -1,0 +1,6 @@
+# Selenium Testing Requirements
+selenium==4.27.1
+pytest==7.4.3
+pytest-html==4.1.1
+webdriver-manager==4.0.2
+

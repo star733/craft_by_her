@@ -49,14 +49,42 @@ export default function TrackOrder() {
 
 	const persistDeliveredToServer = async () => {
 		try {
-			if (!auth.currentUser || !orderId) return;
+			if (!auth.currentUser || !orderId) {
+				console.warn('[Persist] No user or orderId, skipping server update');
+				return;
+			}
+			
+			console.log('[Persist] Updating order status to delivered on server...');
 			const token = await auth.currentUser.getIdToken();
-			await fetch(`http://localhost:5000/api/orders/${orderId}/delivered`, {
+			
+			// Update order status to delivered
+			const response = await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
 				method: 'PATCH',
-				headers: { Authorization: `Bearer ${token}` }
+				headers: { 
+					'Authorization': `Bearer ${token}`,
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({ status: 'delivered' })
 			});
+			
+			if (response.ok) {
+				console.log('[Persist] ✅ Order marked as delivered on server');
+				
+				// Refresh order data to update UI
+				const orderResponse = await fetch(`http://localhost:5000/api/orders/${orderId}`, {
+					headers: { 'Authorization': `Bearer ${token}` }
+				});
+				
+				if (orderResponse.ok) {
+					const updatedOrder = await orderResponse.json();
+					setOrder(updatedOrder);
+					console.log('[Persist] ✅ Order data refreshed, status:', updatedOrder.orderStatus);
+				}
+			} else {
+				console.error('[Persist] Failed to update order:', response.status, response.statusText);
+			}
 		} catch (e) {
-			console.warn('Failed to persist delivered to server (will rely on UI/localStorage):', e?.message || e);
+			console.warn('[Persist] Failed to persist delivered to server:', e?.message || e);
 		}
 	};
 	
@@ -64,14 +92,20 @@ export default function TrackOrder() {
 	useEffect(() => {
 		const checkDeliveredStatus = async () => {
 			try {
-				// First, always clear any old localStorage data for this order
+				console.log(`[Init] Checking status for Order ${orderId}...`);
+				
+				// CRITICAL: Clear localStorage for THIS order first
 				localStorage.removeItem(`delivery-status-${orderId}`);
+				console.log(`[Init] Cleared localStorage for order ${orderId}`);
 				
 				// Reset live state to default
-				setLive(prev => ({ ...prev, delivered: false, simulationRunning: false }));
+				setLive(prev => ({ ...prev, delivered: false, simulationRunning: false, updates: 0, distanceM: 0 }));
 				
 				// Then fetch the actual order status from server
-				if (!auth.currentUser || !orderId) return;
+				if (!auth.currentUser || !orderId) {
+					console.log('[Init] No user or orderId, skipping server check');
+					return;
+				}
 				
 				const token = await auth.currentUser.getIdToken();
 				const response = await fetch(`http://localhost:5000/api/orders/${orderId}`, {
@@ -80,21 +114,21 @@ export default function TrackOrder() {
 				
 				if (response.ok) {
 					const orderData = await response.json();
-					console.log('[TrackOrder] Server order status:', orderData.orderStatus);
+					console.log(`[Init] ✅ Order ${orderId} status from server:`, orderData.orderStatus);
 					
 					// Only set delivered status if server confirms it
 					if (orderData.orderStatus === "delivered") {
-						console.log('[TrackOrder] Order is delivered, updating UI');
+						console.log(`[Init] Order ${orderId} is delivered, setting UI accordingly`);
 						setLive(prev => ({ ...prev, delivered: true, simulationRunning: false }));
 						localStorage.setItem(`delivery-status-${orderId}`, JSON.stringify({ delivered: true, timestamp: Date.now() }));
 					} else {
-						console.log('[TrackOrder] Order is NOT delivered, current status:', orderData.orderStatus);
+						console.log(`[Init] Order ${orderId} is NOT delivered (status: ${orderData.orderStatus})`);
 						// Ensure delivered is false
 						setLive(prev => ({ ...prev, delivered: false, simulationRunning: false }));
 					}
 				}
 			} catch (err) {
-				console.log('Error checking delivery status:', err.message);
+				console.log('[Init] Error checking delivery status:', err.message);
 				// On error, clear everything to be safe
 				localStorage.removeItem(`delivery-status-${orderId}`);
 				setLive(prev => ({ ...prev, delivered: false, simulationRunning: false }));
@@ -107,8 +141,12 @@ export default function TrackOrder() {
 	// Simple geocoding for common Indian cities (no API needed - uses predefined coordinates)
 	const geocodeAddress = (address) => {
 		try {
-			const city = address?.city?.toLowerCase() || '';
-			const state = address?.state?.toLowerCase() || '';
+			console.log('[Geocode] Input address:', JSON.stringify(address, null, 2));
+			const city = address?.city?.toLowerCase()?.trim() || '';
+			const state = address?.state?.toLowerCase()?.trim() || '';
+			const pincode = address?.pincode || '';
+			
+			console.log(`[Geocode] Parsed - City: "${city}", State: "${state}", Pincode: "${pincode}"`);
 			
 			// Common Indian city coordinates (no API required)
 			const cityCoords = {
@@ -130,6 +168,11 @@ export default function TrackOrder() {
 				'alappuzha': { lat: 9.4981, lon: 76.3388 },
 				'palakkad': { lat: 10.7867, lon: 76.6548 },
 				'pala': { lat: 9.7129, lon: 76.6833 }, // Pala, Kottayam district
+				'manimala': { lat: 9.6333, lon: 76.6833 }, // Manimala, Kottayam district
+				'changanacherry': { lat: 9.4444, lon: 76.5429 }, // Changanacherry, Kottayam district
+				'changanassery': { lat: 9.4444, lon: 76.5429 }, // Alternate spelling
+				'ettumanoor': { lat: 9.6667, lon: 76.5667 }, // Ettumanoor, Kottayam
+				'vaikom': { lat: 9.7489, lon: 76.3953 }, // Vaikom, Kottayam
 				'malappuram': { lat: 11.0509, lon: 76.0711 },
 				'ernakulam': { lat: 9.9816, lon: 76.2999 },
 				'kottayam': { lat: 9.5900, lon: 76.5222 },
@@ -178,21 +221,62 @@ export default function TrackOrder() {
 			// Try to find city coordinates - prioritize exact matches
 			// First try exact match
 			if (cityCoords[city]) {
-				console.log(`Exact match found for ${city}: ${cityCoords[city].lat}, ${cityCoords[city].lon}`);
+				console.log(`[Geocode] ✅ Exact match found for "${city}":`, cityCoords[city]);
 				return cityCoords[city];
+			}
+			
+			// Try matching by pincode for Kottayam district and surrounding areas
+			if (pincode) {
+				const pincodeInt = parseInt(pincode);
+				
+				// Changanacherry area pincodes (686101-686106)
+				if (pincodeInt >= 686101 && pincodeInt <= 686106) {
+					console.log(`[Geocode] ✅ Pincode match for Changanacherry area (${pincode})`);
+					return { lat: 9.4444, lon: 76.5429 }; // Changanacherry
+				}
+				// Kottayam town pincodes (686001-686020)
+				if (pincodeInt >= 686001 && pincodeInt <= 686020) {
+					console.log(`[Geocode] ✅ Pincode match for Kottayam town (${pincode})`);
+					return { lat: 9.5900, lon: 76.5222 }; // Kottayam
+				}
+				// Manimala area pincodes (686543, 686544, etc.)
+				if (pincodeInt >= 686540 && pincodeInt <= 686549) {
+					console.log(`[Geocode] ✅ Pincode match for Manimala area (${pincode})`);
+					return { lat: 9.6333, lon: 76.6833 }; // Manimala
+				}
+				// Pala area pincodes (686575-686580)
+				if (pincodeInt >= 686575 && pincodeInt <= 686580) {
+					console.log(`[Geocode] ✅ Pincode match for Pala area (${pincode})`);
+					return { lat: 9.7129, lon: 76.6833 }; // Pala
+				}
+				// Ettumanoor area pincodes (686631-686636)
+				if (pincodeInt >= 686631 && pincodeInt <= 686636) {
+					console.log(`[Geocode] ✅ Pincode match for Ettumanoor area (${pincode})`);
+					return { lat: 9.6667, lon: 76.5667 }; // Ettumanoor
+				}
+				// Vaikom area pincodes (686141-686145)
+				if (pincodeInt >= 686141 && pincodeInt <= 686145) {
+					console.log(`[Geocode] ✅ Pincode match for Vaikom area (${pincode})`);
+					return { lat: 9.7489, lon: 76.3953 }; // Vaikom
+				}
+				// Broader Kottayam district coverage (686xxx)
+				if (pincodeInt >= 686000 && pincodeInt <= 686699) {
+					console.log(`[Geocode] ✅ Pincode in Kottayam district range (${pincode}), using Kottayam center`);
+					return { lat: 9.5900, lon: 76.5222 }; // Kottayam district center
+				}
 			}
 			
 			// Then try partial matches
 			for (const [cityName, coords] of Object.entries(cityCoords)) {
 				if (city.includes(cityName) || cityName.includes(city)) {
-					console.log(`Partial match found for ${city} -> ${cityName}: ${coords.lat}, ${coords.lon}`);
+					console.log(`[Geocode] ✅ Partial match found: "${city}" -> "${cityName}":`, coords);
 					return coords;
 				}
 			}
 			
-			// Default to Kochi if not found
-			console.log(`City "${city}" not found in database, using Kochi coordinates`);
-			return { lat: 9.9312, lon: 76.2673 };
+			// Default to delivery hub (Koovappally) if nothing matches
+			console.warn(`[Geocode] ⚠️ No match found for city "${city}", pincode "${pincode}". Using delivery hub.`);
+			return { lat: 9.5341, lon: 76.7852 }; // Koovappally hub instead of Kochi
 		} catch (err) {
 			console.error('Error in geocoding:', err);
 			return { lat: 9.9312, lon: 76.2673 };
@@ -269,20 +353,35 @@ export default function TrackOrder() {
 				// Check localStorage first - if delivered, don't poll
 				const savedStatus = localStorage.getItem(`delivery-status-${orderId}`);
 				if (savedStatus) {
-					const parsed = JSON.parse(savedStatus);
-					if (parsed.delivered) {
-						console.log('[TrackOrder] Order already delivered according to localStorage, skipping poll');
-						return;
+					try {
+						const parsed = JSON.parse(savedStatus);
+						if (parsed.delivered) {
+							console.log(`[Poll] ⏸️ Order ${orderId} already delivered (localStorage), skipping poll`);
+							return;
+						}
+					} catch (e) {
+						// Invalid JSON, remove it
+						console.warn(`[Poll] Invalid localStorage data for order ${orderId}, clearing...`);
+						localStorage.removeItem(`delivery-status-${orderId}`);
 					}
 				}
 				
 				const token = await auth.currentUser.getIdToken();
-				const response = await fetch(`http://localhost:5000/api/orders/${orderId}` , { headers: { Authorization: `Bearer ${token}` } });
+				const response = await fetch(`http://localhost:5000/api/orders/${orderId}` , { 
+					headers: { Authorization: `Bearer ${token}` } 
+				});
+				
 				if (response.ok) {
 					const fresh = await response.json();
 					setOrder(prev => {
 						if (!prev || prev.orderStatus !== fresh.orderStatus) {
-							console.log('[TrackOrder] Order status updated from server:', fresh.orderStatus);
+							console.log(`[Poll] ✅ Order ${orderId} status updated: ${prev?.orderStatus || 'none'} → ${fresh.orderStatus}`);
+							
+							// If order became delivered, update localStorage and live state
+							if (fresh.orderStatus === "delivered") {
+								localStorage.setItem(`delivery-status-${orderId}`, JSON.stringify({ delivered: true, timestamp: Date.now() }));
+								setLive(current => ({ ...current, delivered: true, simulationRunning: false }));
+							}
 							return fresh;
 						}
 						return prev;
@@ -320,21 +419,34 @@ export default function TrackOrder() {
 			
 			// Get destination from order data or use default
 			const getDestination = () => {
+				console.log('[Destination] Calculating buyer location...');
+				console.log('[Destination] Order deliveryInfo:', order?.deliveryInfo);
+				console.log('[Destination] Order buyerDetails:', order?.buyerDetails);
+				
 				if (order?.deliveryInfo?.customerLocation?.latitude && order?.deliveryInfo?.customerLocation?.longitude) {
-					return { 
+					const coords = { 
 						lat: order.deliveryInfo.customerLocation.latitude, 
 						lon: order.deliveryInfo.customerLocation.longitude 
 					};
+					console.log('[Destination] ✅ Using saved customer location:', coords);
+					return coords;
 				}
+				
 				// Fallback: geocode the address
 				if (order?.buyerDetails?.address) {
-					return geocodeAddress(order.buyerDetails.address);
+					console.log('[Destination] Using geocoding for address...');
+					const coords = geocodeAddress(order.buyerDetails.address);
+					console.log('[Destination] ✅ Geocoded to:', coords);
+					return coords;
 				}
-				// Final fallback: default Kochi location
-				return { lat: 9.9368, lon: 76.2745 };
+				
+				// Final fallback: default to delivery hub
+				console.warn('[Destination] ⚠️ No address found, using delivery hub');
+				return { lat: 9.5341, lon: 76.7852 }; // Koovappally hub
 			};
 			
 			const DEST = getDestination();
+			console.log('[Map] 🎯 Final destination coordinates:', DEST);
 			const SPEED_KMH = 25; // average speed for ETA
 			const formatEta = (seconds) => {
 				if (!isFinite(seconds) || seconds <= 0) return "~1 min";
@@ -344,74 +456,111 @@ export default function TrackOrder() {
 			};
 			
 			const setup = async () => {
-				if (!order) return; // Wait for order data
+				if (!order) {
+					console.log('[Map Init] Waiting for order data...');
+					return; // Wait for order data
+				}
 				
 				try {
+					console.log('[Map Init] Starting setup process...');
+					
+					// Wait a bit for DOM to be ready
+					await new Promise(resolve => setTimeout(resolve, 100));
+					
+					// Ensure map container exists before initializing
+					const mapContainer = document.getElementById("track-map");
+					if (!mapContainer) {
+						console.warn('[Map Init] Map container not found yet, will retry in 500ms...');
+						// Retry after a delay
+						setTimeout(() => setup(), 500);
+						return;
+					}
+					
+					// CRITICAL FIX: Clear any existing Leaflet map data from the container
+					if (mapContainer._leaflet_id) {
+						console.log('[Map Init] Removing existing Leaflet instance from container...');
+						mapContainer._leaflet_id = undefined;
+						mapContainer.innerHTML = ''; // Clear the container
+					}
+					
+					// Check if already initialized in our ref
+					if (mapRef.current && mapRef.current._leaflet_id) {
+						console.log('[Map Init] Map already initialized in ref, skipping...');
+						return;
+					}
+					
+					console.log('[Map Init] Loading Leaflet resources...');
 					await loadCss("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
 					await loadScript("https://cdn.socket.io/4.7.4/socket.io.min.js");
 					await loadScript("https://unpkg.com/leaflet@1.9.4/dist/leaflet.js");
+					
+					// Wait for Leaflet to be available
+					let attempts = 0;
+					while (!window.L && attempts < 10) {
+						console.log(`[Map Init] Waiting for Leaflet... (attempt ${attempts + 1}/10)`);
+						await new Promise(resolve => setTimeout(resolve, 200));
+						attempts++;
+					}
+					
 					const hasLeaflet = Boolean(window.L);
+					if (!hasLeaflet) {
+						throw new Error("Leaflet library failed to load after 10 attempts");
+					}
 					
-						// Ensure map container exists before initializing and avoid double init
-						const mapContainer = document.getElementById("track-map");
-						if (!mapContainer) {
-							throw new Error("Map container not found.");
-						}
-						if (mapRef.current && mapRef.current._leaflet_id) {
-							// Already initialized; skip re-init
-							return;
-						}
+					console.log('[Map Init] ✅ Leaflet loaded successfully!');
 					
+					console.log('[Map Init] Creating map instance...');
 					// Center map on destination
 					// eslint-disable-next-line no-undef
-					if (hasLeaflet) {
-						map = window.L.map("track-map").setView([DEST.lat, DEST.lon], 14);
-						mapRef.current = map;
+					map = window.L.map("track-map").setView([DEST.lat, DEST.lon], 14);
+					mapRef.current = map;
+					
+					console.log('[Map Init] Adding tile layer...');
+					// eslint-disable-next-line no-undef
+					window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+					
+					console.log('[Map Init] Creating delivery boy marker...');
+					// eslint-disable-next-line no-undef
+					// Create delivery boy marker at starting position (not destination)
+					const startPos = START_DEFAULT; // Delivery boy starts from here
+					marker = window.L.marker([startPos.lat, startPos.lon]).addTo(map);
+					markerRef.current = marker;
+					
+					// Check if order is already delivered from localStorage
+					const savedStatus = localStorage.getItem(`delivery-status-${orderId}`);
+					const isDelivered = savedStatus ? JSON.parse(savedStatus).delivered : false;
+					if (isDelivered) {
+						console.log('[Map Init] Order already delivered, showing final position');
+						// If delivered, move marker to destination and show delivered status
+						marker.setLatLng([DEST.lat, DEST.lon]);
+						marker.bindPopup('Delivered ✅').openPopup();
+						// Update live state to reflect delivered status
+						setLive(prev => ({ ...prev, delivered: true, simulationRunning: false }));
+					} else {
+						marker.bindPopup('Delivery Boy is on the way 🚚').openPopup();
 					}
+					
+					console.log('[Map Init] Creating polyline...');
 					// eslint-disable-next-line no-undef
-					if (hasLeaflet && map) {
-						window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
-					}
-					// eslint-disable-next-line no-undef
-						if (hasLeaflet && map) {
-							// Create delivery boy marker at starting position (not destination)
-							const startPos = START_DEFAULT; // Delivery boy starts from here
-							marker = window.L.marker([startPos.lat, startPos.lon]).addTo(map);
-							markerRef.current = marker;
-							
-							// Check if order is already delivered from localStorage
-							const savedStatus = localStorage.getItem(`delivery-status-${orderId}`);
-							const isDelivered = savedStatus ? JSON.parse(savedStatus).delivered : false;
-							if (isDelivered) {
-								// If delivered, move marker to destination and show delivered status
-								marker.setLatLng([DEST.lat, DEST.lon]);
-								marker.bindPopup('Delivered ✅').openPopup();
-								// Update live state to reflect delivered status
-								setLive(prev => ({ ...prev, delivered: true, simulationRunning: false }));
-							} else {
-								marker.bindPopup('Delivery Boy is on the way 🚚').openPopup();
-							}
-						}
-					// eslint-disable-next-line no-undef
-						if (hasLeaflet && map) {
-							polyline = window.L.polyline([], { color: '#2563eb', weight: 4 }).addTo(map);
-							polylineRef.current = polyline;
-							coordsRef.current = [];
-						}
+					polyline = window.L.polyline([], { color: '#2563eb', weight: 4 }).addTo(map);
+					polylineRef.current = polyline;
+					coordsRef.current = [];
+					
+					console.log('[Map Init] Creating destination marker...');
 					// Destination marker (buyer's location)
 					// eslint-disable-next-line no-undef
-					if (hasLeaflet && map) {
-						const destMarker = window.L.marker([DEST.lat, DEST.lon], { 
-							title: 'Buyer Location',
-							icon: window.L.divIcon({
-								className: 'custom-destination-marker',
-								html: '<div style="background: #dc2626; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">📍</div>',
-								iconSize: [20, 20],
-								iconAnchor: [10, 10]
-							})
-						}).addTo(map);
-						destMarker.bindPopup('Buyer Location 📍');
-					}
+					const destMarker = window.L.marker([DEST.lat, DEST.lon], { 
+						title: 'Buyer Location',
+						icon: window.L.divIcon({
+							className: 'custom-destination-marker',
+							html: '<div style="background: #dc2626; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: bold;">📍</div>',
+							iconSize: [20, 20],
+							iconAnchor: [10, 10]
+						})
+					}).addTo(map);
+					destMarker.bindPopup('Buyer Location 📍');
+					
+					console.log('[Map Init] ✅ Map initialization complete!');
 					
 					// Setup socket connection (guard against missing global)
 					const reachable = await pingRealtimeServer();
@@ -578,105 +727,218 @@ export default function TrackOrder() {
 			setError("Failed to load tracking system");
 		}
 		
-		return () => { 
+		return () => {
+			console.log('[Cleanup] Cleaning up map and connections...');
+			
+			// Stop simulation
+			if (localSimRef.current?.timer) { 
+				clearInterval(localSimRef.current.timer); 
+				localSimRef.current = { timer: null, running: false }; 
+			}
+			
+			// Close socket
 			try { 
-				if (mapRef.current && mapRef.current.remove) { mapRef.current.remove(); }
-				mapRef.current = null;
-				markerRef.current = null;
-				polylineRef.current = null;
-			} catch {}
-			try { if (socketRef.current) { socketRef.current.close(); } } catch {}
+				if (socketRef.current) { 
+					socketRef.current.close(); 
+				} 
+			} catch (e) {
+				console.warn('[Cleanup] Socket close error:', e.message);
+			}
 			socketRef.current = null;
-			if (localSimRef.current?.timer) { clearInterval(localSimRef.current.timer); localSimRef.current = { timer: null, running: false }; }
+			
+			// Remove map
+			try { 
+				if (mapRef.current && mapRef.current.remove) { 
+					mapRef.current.remove(); 
+				} 
+			} catch (e) {
+				console.warn('[Cleanup] Map remove error:', e.message);
+			}
+			
+			// CRITICAL: Clear map container to prevent "already initialized" error
+			const mapContainer = document.getElementById("track-map");
+			if (mapContainer) {
+				mapContainer._leaflet_id = undefined;
+				mapContainer.innerHTML = '';
+			}
+			
+			// Clear refs
+			mapRef.current = null;
+			markerRef.current = null;
+			polylineRef.current = null;
+			
+			console.log('[Cleanup] ✅ Cleanup complete');
 		};
 	}, [order]);
 
 	// Local fallback simulation if realtime server is unavailable
 	const startLocalSimulation = (destination, startPoint) => {
-		if (localSimRef.current.running) return;
+		if (localSimRef.current.running) {
+			console.log('[Local Sim] Already running, skipping...');
+			return;
+		}
+		
+		console.log('[Local Sim] Starting simulation to:', destination);
 		localSimRef.current.running = true;
-		setLive(prev => ({ ...prev, simulationRunning: true }));
+		setLive(prev => ({ ...prev, simulationRunning: true, outForDelivery: true }));
 		let current = startPoint || { lat: destination.lat - 0.05, lon: destination.lon - 0.05 };
 		const stepMs = 3000;
+		
 		localSimRef.current.timer = setInterval(() => {
 			try {
-				const toRad = (v) => (v * Math.PI) / 180; const R = 6371000;
-				const dLat = (destination.lat - current.lat); const dLon = (destination.lon - current.lon);
+				const dLat = (destination.lat - current.lat); 
+				const dLon = (destination.lon - current.lon);
 				const remaining = Math.sqrt((dLat*dLat) + (dLon*dLon));
+				
 				current.lat += dLat * 0.2; // move 20% each tick
 				current.lon += dLon * 0.2;
-				// Update map visuals
+				
+				// Safely update map visuals
 				if (mapRef.current && markerRef.current) {
-					markerRef.current.setLatLng([current.lat, current.lon]);
-					mapRef.current.setView([current.lat, current.lon]);
+					try {
+						markerRef.current.setLatLng([current.lat, current.lon]);
+						mapRef.current.setView([current.lat, current.lon]);
+					} catch (e) {
+						console.warn('[Local Sim] Map update failed:', e.message);
+					}
 				}
+				
 				coordsRef.current = [...(coordsRef.current || []), [current.lat, current.lon]];
-				if (polylineRef.current) polylineRef.current.setLatLngs(coordsRef.current);
+				if (polylineRef.current) {
+					try {
+						polylineRef.current.setLatLngs(coordsRef.current);
+					} catch (e) {
+						console.warn('[Local Sim] Polyline update failed:', e.message);
+					}
+				}
+				
 				setLive(pr => ({
 					...pr,
 					updates: pr.updates + 1,
 					coords: { lat: current.lat, lon: current.lon },
-					etaText: remaining < 0.0002 ? 'Delivered ✅' : pr.etaText,
+					etaText: remaining < 0.0002 ? 'Delivered ✅' : `~${Math.ceil(remaining * 100)}min`,
 					simulationRunning: remaining >= 0.0002,
 					connected: pr.connected
 				}));
+				
+				// Check if delivered
 				if (remaining < 0.0002) {
+					console.log('[Local Sim] 🎉 Delivery completed!');
 					clearInterval(localSimRef.current.timer);
 					localSimRef.current = { timer: null, running: false };
-						setLive(pr => ({ ...pr, delivered: true }));
-						// Persist delivered locally and to server
+					setLive(pr => ({ ...pr, delivered: true, simulationRunning: false }));
+					
+					// Update marker popup to show delivered
+					if (markerRef.current && markerRef.current.bindPopup) {
 						try {
-							localStorage.setItem(`delivery-status-${orderId}`, JSON.stringify({ delivered: true, timestamp: Date.now() }));
-							persistDeliveredToServer();
-						} catch {}
+							markerRef.current.bindPopup('✅ Delivered!').openPopup();
+							console.log('[Local Sim] Marker popup updated to Delivered');
+						} catch (e) {
+							console.warn('[Local Sim] Failed to update marker popup:', e.message);
+						}
+					}
+					
+					// Update order state immediately for UI
+					if (order) {
+						setOrder(prev => ({ ...prev, orderStatus: 'delivered' }));
+						console.log('[Local Sim] Order status updated to delivered in UI');
+					}
+					
+					// Persist delivered locally and to server
+					try {
+						localStorage.setItem(`delivery-status-${orderId}`, JSON.stringify({ delivered: true, timestamp: Date.now() }));
+						persistDeliveredToServer();
+					} catch (e) {
+						console.warn('[Local Sim] Failed to persist delivery status:', e.message);
+					}
 				}
-			} catch {}
+			} catch (e) {
+				console.error('[Local Sim] Simulation error:', e);
+			}
 		}, stepMs);
 	};
 
 	const handleStartTracking = async () => {
+		console.log('🚀 [Tracking] Start button clicked!');
+		console.log('[Tracking] Current order ID:', orderId);
+		console.log('[Tracking] Current order status:', order.orderStatus);
+		console.log('[Tracking] Map ref exists:', !!mapRef.current);
+		console.log('[Tracking] Marker ref exists:', !!markerRef.current);
+		console.log('[Tracking] Polyline ref exists:', !!polylineRef.current);
+		
 		// Only allow tracking to start if order is picked_up, in_transit, or shipped
 		if (order.orderStatus !== 'picked_up' && order.orderStatus !== 'in_transit' && order.orderStatus !== 'shipped') {
-			console.log('Cannot start tracking: Order not picked up yet. Current status:', order.orderStatus);
+			console.error('[Tracking] ❌ Cannot start: Order not in correct status. Current:', order.orderStatus);
+			alert(`Cannot start tracking. Order status must be "picked_up", "in_transit", or "shipped". Current status: ${order.orderStatus}`);
 			return;
 		}
 		
+		// Verify map and marker are initialized before starting
+		if (!mapRef.current || !markerRef.current) {
+			console.error('[Tracking] ❌ Cannot start: Map or marker not initialized yet.');
+			console.error('[Tracking] Map:', mapRef.current, 'Marker:', markerRef.current);
+			alert('Map is still loading. Please wait a moment and try again.');
+			return;
+		}
+		
+		console.log('[Tracking] ✅ All checks passed, starting tracking...');
 		setTrackingStarted(true);
 		
 		// Update order status to in_transit when tracking starts
 		if (order.orderStatus === 'picked_up' || order.orderStatus === 'shipped') {
 			try {
-				const response = await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
-					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ status: 'in_transit' })
-				});
-				if (response.ok) {
-					console.log('Order status updated to in_transit');
-					// Refresh order data
-					const orderResponse = await fetch(`http://localhost:5000/api/orders/${orderId}`);
-					if (orderResponse.ok) {
-						const orderData = await orderResponse.json();
-						setOrder(orderData);
+				if (!auth.currentUser) {
+					console.warn('[Tracking] No authenticated user, skipping status update');
+				} else {
+					const token = await auth.currentUser.getIdToken();
+					const response = await fetch(`http://localhost:5000/api/orders/${orderId}/status`, {
+						method: 'PATCH',
+						headers: { 
+							'Content-Type': 'application/json',
+							'Authorization': `Bearer ${token}`
+						},
+						body: JSON.stringify({ status: 'in_transit' })
+					});
+					if (response.ok) {
+						console.log('[Tracking] ✅ Order status updated to in_transit');
+						// Refresh order data
+						const orderResponse = await fetch(`http://localhost:5000/api/orders/${orderId}`, {
+							headers: { 'Authorization': `Bearer ${token}` }
+						});
+						if (orderResponse.ok) {
+							const orderData = await orderResponse.json();
+							setOrder(orderData);
+						}
+					} else {
+						console.warn('[Tracking] Failed to update status:', response.status);
 					}
 				}
 			} catch (error) {
-				console.error('Failed to update order status:', error);
+				console.warn('[Tracking] Status update error (continuing anyway):', error.message);
 			}
 		}
 		
-		try {
-			// Start server-side simulation
-			await fetch(`${rtUrlRef.current}/start`, { method: 'POST' });
-			console.log('Tracking started manually');
-		} catch (e) {
-			console.warn('Failed to start server tracking, will use local simulation');
-			// Fallback to local simulation if server not available
-			const destination = order?.deliveryInfo?.customerLocation?.latitude && order?.deliveryInfo?.customerLocation?.longitude
-				? { lat: order.deliveryInfo.customerLocation.latitude, lon: order.deliveryInfo.customerLocation.longitude }
-				: geocodeAddress(order?.buyerDetails?.address) || { lat: 9.9368, lon: 76.2745 };
-			startLocalSimulation(destination, START_DEFAULT);
+		// Always start local simulation (don't rely on server)
+		console.log('[Tracking] Starting local simulation...');
+		
+		// Calculate destination using the same logic as map initialization
+		let destination;
+		if (order?.deliveryInfo?.customerLocation?.latitude && order?.deliveryInfo?.customerLocation?.longitude) {
+			destination = { 
+				lat: order.deliveryInfo.customerLocation.latitude, 
+				lon: order.deliveryInfo.customerLocation.longitude 
+			};
+			console.log('[Tracking] Using saved customer location:', destination);
+		} else if (order?.buyerDetails?.address) {
+			destination = geocodeAddress(order?.buyerDetails?.address);
+			console.log('[Tracking] Geocoded buyer address to:', destination);
+		} else {
+			destination = { lat: 9.5341, lon: 76.7852 }; // Koovappally hub fallback
+			console.warn('[Tracking] No address found, using delivery hub');
 		}
+		
+		console.log('[Tracking] 🎯 Starting local simulation to destination:', destination);
+		startLocalSimulation(destination, START_DEFAULT);
 	};
 
 	return (
@@ -718,6 +980,14 @@ export default function TrackOrder() {
 						</div>
 					)}
 
+					{/* Buyer Address Debug Info - Remove this after testing */}
+					{order.buyerDetails.name !== "Demo Customer" && order.buyerDetails?.address && (
+						<div style={{ background: "#f0f9ff", border: "1px solid #60a5fa", borderRadius: "12px", padding: "12px", marginBottom: "12px", fontSize: "13px" }}>
+							<strong>📍 Delivery Address:</strong> {order.buyerDetails.address.street}, {order.buyerDetails.address.city}, {order.buyerDetails.address.state} - {order.buyerDetails.address.pincode}
+							{order.buyerDetails.address.landmark && <span> (Near {order.buyerDetails.address.landmark})</span>}
+						</div>
+					)}
+
 					{/* Delivery Assignment Status - Only show for non-delivered orders */}
 					{order.buyerDetails.name !== "Demo Customer" && order.orderStatus !== "delivered" && order.orderStatus !== "confirmed" && (
 						<div style={{ background: "#fff", border: "1px solid #ddd", borderRadius: "12px", padding: "16px", marginBottom: "12px" }}>
@@ -742,11 +1012,17 @@ export default function TrackOrder() {
 										Waiting for pickup... Real-time tracking will start once the delivery boy picks up the order.
 									</p>
 								</div>
-							) : order.orderStatus === "picked_up" || order.orderStatus === "in_transit" || order.orderStatus === "shipped" ? (
-								<div style={{ background: "#d4edda", border: "1px solid #c3e6cb", borderRadius: "8px", padding: "16px" }}>
-									<p style={{ margin: "0 0 12px 0", color: "#155724" }}>
-										🚚 <strong>Shipped:</strong> {order.deliveryInfo.agentId} has picked up your order and it's on the way!
-									</p>
+						) : (order.orderStatus === "delivered" || live.delivered) ? (
+							<div style={{ background: "#d4edda", border: "2px solid #28a745", borderRadius: "8px", padding: "16px" }}>
+								<p style={{ margin: 0, color: "#155724", fontSize: "16px", fontWeight: "600" }}>
+									✅ <strong>Delivered:</strong> Your order has been successfully delivered{order.deliveryInfo?.agentId ? ` by ${order.deliveryInfo.agentId}` : ''}!
+								</p>
+							</div>
+						) : order.orderStatus === "picked_up" || order.orderStatus === "in_transit" || order.orderStatus === "shipped" ? (
+							<div style={{ background: "#d4edda", border: "1px solid #c3e6cb", borderRadius: "8px", padding: "16px" }}>
+								<p style={{ margin: "0 0 12px 0", color: "#155724" }}>
+									🚚 <strong>Shipped:</strong> {order.deliveryInfo.agentId} has picked up your order and it's on the way!
+								</p>
 									{!trackingStarted ? (
 										<button
 											onClick={handleStartTracking}
@@ -778,6 +1054,21 @@ export default function TrackOrder() {
 										>
 											🚀 Start Real-Time Tracking
 										</button>
+									) : live.simulationRunning ? (
+										<div style={{ 
+											background: "#fff3cd", 
+											border: "2px solid #ffc107", 
+											borderRadius: "8px", 
+											padding: "12px",
+											textAlign: "center"
+										}}>
+											<p style={{ margin: 0, color: "#856404", fontWeight: "600" }}>
+												🚚 Tracking Active - Delivery boy is moving to your location...
+											</p>
+											<p style={{ margin: "8px 0 0 0", fontSize: "14px", color: "#856404" }}>
+												Updates: {live.updates} | Distance covered: {live.distanceM.toFixed(0)}m
+											</p>
+										</div>
 									) : (
 										<p style={{ margin: 0, color: "#155724", fontSize: "14px", fontWeight: "600" }}>
 											✅ Real-time tracking is now active!
@@ -805,19 +1096,46 @@ export default function TrackOrder() {
 								<div style={{ marginTop: "8px", fontSize: "12px", color: "#155724" }}>
 									Delivery confirmed
 								</div>
+								
+								{/* Reset Tracking Button - For testing/demo purposes */}
+								<button
+									onClick={() => {
+										localStorage.removeItem(`delivery-status-${orderId}`);
+										setLive(prev => ({ ...prev, delivered: false, simulationRunning: false, updates: 0, distanceM: 0 }));
+										toast.info("🔄 Tracking reset! You can now test the simulation again.");
+										// Refresh page to reset map
+										setTimeout(() => window.location.reload(), 1000);
+									}}
+									style={{
+										marginTop: "12px",
+										padding: "8px 16px",
+										background: "#ffc107",
+										color: "#000",
+										border: "none",
+										borderRadius: "6px",
+										fontSize: "13px",
+										fontWeight: "600",
+										cursor: "pointer",
+										transition: "all 0.2s"
+									}}
+									onMouseEnter={(e) => e.target.style.background = "#ffb300"}
+									onMouseLeave={(e) => e.target.style.background = "#ffc107"}
+								>
+									🔄 Reset Tracking (Testing)
+								</button>
 							</div>
 						</div>
 					) : null}
 
-					{/* Socket Connection Notice */}
-					{!live.connected && (
-						<div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "12px", padding: "16px", marginBottom: "12px" }}>
-							<h4 style={{ margin: "0 0 8px 0", color: "#dc2626" }}>⚠️ Tracking Server Disconnected</h4>
-							<p style={{ margin: 0, fontSize: "14px", color: "#dc2626" }}>
-								The real-time tracking server is not running. Please start the server or use the "Open Full Page" button for standalone tracking.
-							</p>
-						</div>
-					)}
+				{/* Socket Connection Notice */}
+				{!live.connected && order.orderStatus !== "delivered" && (
+					<div style={{ background: "#e3f2fd", border: "1px solid #90caf9", borderRadius: "12px", padding: "16px", marginBottom: "12px" }}>
+						<h4 style={{ margin: "0 0 8px 0", color: "#1976d2" }}>ℹ️ Using Local Simulation</h4>
+						<p style={{ margin: 0, fontSize: "14px", color: "#1565c0" }}>
+							The realtime tracking server is not running. Don't worry - the system will use <strong>local simulation</strong> when you click "Start Real-Time Tracking". It works perfectly! ✨
+						</p>
+					</div>
+				)}
 
 					{/* Delivery Address Info */}
 					{order.buyerDetails?.address && (
@@ -858,13 +1176,13 @@ export default function TrackOrder() {
 						} else if (label === "Shipped") {
 							// Show when delivery boy marks as picked up
 							active = order?.orderStatus === "picked_up" || order?.orderStatus === "in_transit" || order?.orderStatus === "shipped" || order?.orderStatus === "delivered";
-						} else if (label === "Out for Delivery") {
-							// Show when tracking simulation starts (in_transit status)
-							active = (order?.orderStatus === "in_transit" || order?.orderStatus === "delivered") && (live.simulationRunning || live.updates > 0 || trackingStarted);
-						} else if (label === "Delivered") {
-							// Only show when actually delivered on server
-							active = order?.orderStatus === "delivered";
-						}
+					} else if (label === "Out for Delivery") {
+						// Show when tracking simulation starts (in_transit status) OR when delivered
+						active = order?.orderStatus === "delivered" || live.delivered || ((order?.orderStatus === "in_transit") && (live.simulationRunning || live.updates > 0 || trackingStarted));
+					} else if (label === "Delivered") {
+						// Show when delivered (from order status OR live simulation)
+						active = order?.orderStatus === "delivered" || live.delivered;
+					}
 						
 						return (
 							<div key={label} style={{ 

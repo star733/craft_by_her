@@ -22,6 +22,10 @@ export default function DeliveryDashboard() {
   const [showPickupModal, setShowPickupModal] = useState(false);
   const [selectedOrderForPickup, setSelectedOrderForPickup] = useState(null);
   const [pickupNotes, setPickupNotes] = useState("");
+  const [showManualLocationModal, setShowManualLocationModal] = useState(false);
+  const [manualLat, setManualLat] = useState("");
+  const [manualLon, setManualLon] = useState("");
+  const [locationPermissionDenied, setLocationPermissionDenied] = useState(false);
 
   // Check authentication on mount
   useEffect(() => {
@@ -69,9 +73,13 @@ export default function DeliveryDashboard() {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude
           });
+          setLocationPermissionDenied(false); // Permission granted
         },
         (error) => {
           console.error("Error getting location:", error);
+          if (error.code === error.PERMISSION_DENIED) {
+            setLocationPermissionDenied(true); // Permission denied
+          }
         }
       );
 
@@ -214,55 +222,147 @@ export default function DeliveryDashboard() {
     }
   };
 
+  // Use default location (Koovappally hub)
+  const useDefaultLocation = async () => {
+    const defaultCoords = {
+      latitude: 9.5341,
+      longitude: 76.7852
+    };
+    
+    try {
+      setLoading(true);
+      const res = await fetch("http://localhost:5000/api/delivery/location", {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(defaultCoords)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setLocation(defaultCoords);
+          toast.success("✅ Using default hub location (Koovappally)");
+          
+          const mapUrl = `https://www.google.com/maps?q=${defaultCoords.latitude},${defaultCoords.longitude}`;
+          window.open(mapUrl, "_blank");
+        }
+      }
+    } catch (err) {
+      console.error("Error using default location:", err);
+      toast.error("Failed to set default location");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Update location with manual coordinates
+  const updateManualLocation = async () => {
+    const lat = parseFloat(manualLat);
+    const lon = parseFloat(manualLon);
+    
+    if (isNaN(lat) || isNaN(lon)) {
+      toast.error("Please enter valid latitude and longitude");
+      return;
+    }
+    
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+      toast.error("Coordinates out of range. Lat: -90 to 90, Lon: -180 to 180");
+      return;
+    }
+    
+    const coords = { latitude: lat, longitude: lon };
+    
+    try {
+      setLoading(true);
+      const res = await fetch("http://localhost:5000/api/delivery/location", {
+        method: "PATCH",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(coords)
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setLocation(coords);
+          toast.success("✅ Manual location updated successfully!");
+          setShowManualLocationModal(false);
+          setManualLat("");
+          setManualLon("");
+          
+          const mapUrl = `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`;
+          window.open(mapUrl, "_blank");
+        }
+      }
+    } catch (err) {
+      console.error("Error updating manual location:", err);
+      toast.error("Failed to update location");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const updateLocation = async () => {
     if (!navigator.geolocation) {
-      toast.error("Geolocation not supported");
+      toast.error("Geolocation not supported by your browser");
       return;
     }
 
-    toast.info("Getting your current location...", { autoClose: 1500 });
+    toast.info("📍 Getting your current location...", { autoClose: 1500 });
+    setLoading(true);
 
-    // Open a blank tab now (user gesture) to avoid popup blockers; update it after we have coords
-    const previewWin = window.open("", "_blank");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const coords = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude
+        };
+        try {
+          const res = await fetch("http://localhost:5000/api/delivery/location", {
+            method: "PATCH",
+            headers: getAuthHeaders(),
+            body: JSON.stringify(coords)
+          });
 
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const coords = {
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude
-      };
-      try {
-        const res = await fetch("http://localhost:5000/api/delivery/location", {
-          method: "PATCH",
-          headers: getAuthHeaders(),
-          body: JSON.stringify(coords)
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            setLocation(coords);
-            toast.success("Location updated successfully");
-            const mapUrl = `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`;
-            if (previewWin && !previewWin.closed) {
-              previewWin.location.href = mapUrl;
-            } else {
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              setLocation(coords);
+              toast.success("✅ Location updated successfully!");
+              
+              // Open map in new tab
+              const mapUrl = `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`;
               window.open(mapUrl, "_blank");
+            } else {
+              toast.error(data.error || "Failed to update location");
             }
           } else {
-            toast.error(data.error || "Failed to update location");
+            const errData = await res.json().catch(() => ({}));
+            toast.error(errData.error || "Failed to update location");
           }
-        } else {
-          const errData = await res.json().catch(() => ({}));
-          toast.error(errData.error || "Failed to update location");
+        } catch (err) {
+          console.error("Error updating location:", err);
+          toast.error("Network error: Failed to update location");
+        } finally {
+          setLoading(false);
         }
-      } catch (err) {
-        console.error("Error updating location:", err);
-        toast.error("Failed to update location");
-      }
-    }, (error) => {
-      console.error("Geolocation error:", error);
-      toast.error("Permission denied or unavailable");
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        setLoading(false);
+        
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationPermissionDenied(true); // Mark permission as denied
+          toast.info("Please use '🏠 Use Hub Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          toast.error("❌ Location information is unavailable.");
+        } else if (error.code === error.TIMEOUT) {
+          toast.error("❌ Location request timed out. Please try again.");
+        } else {
+          toast.error("❌ An error occurred while getting your location.");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   const updateOrderStatus = async (orderId, status, notes = "") => {
@@ -337,62 +437,81 @@ export default function DeliveryDashboard() {
 
   const shareLiveLocation = async () => {
     if (!navigator.geolocation) {
-      toast.error("Geolocation not supported");
+      toast.error("Geolocation not supported by your browser");
       return;
     }
 
     // Check if agent is authenticated
     if (!agent || !localStorage.getItem("deliveryToken")) {
-      console.log("Agent not authenticated, skipping location share");
+      toast.warning("⚠️ Please log in to share your location");
       return;
     }
 
-    toast.info("Sharing your live location...", { autoClose: 1500 });
+    // If permission already denied, suggest alternatives
+    if (locationPermissionDenied) {
+      toast.info("Please use '🏠 Use Hub Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
+      return;
+    }
 
-    // Open a blank tab now (user gesture) to avoid popup blockers; update it after we have coords
-    const previewWin = window.open("", "_blank");
+    toast.info("📡 Sharing your live location...", { autoClose: 1500 });
+    setLoading(true);
 
-    navigator.geolocation.getCurrentPosition(async (pos) => {
-      const coords = {
-        latitude: pos.coords.latitude,
-        longitude: pos.coords.longitude
-      };
-      try {
-        const res = await fetch("http://localhost:5000/api/delivery-orders/location", {
-          method: "PATCH",
-          headers: getAuthHeaders(),
-          body: JSON.stringify(coords)
-        });
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const coords = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude
+        };
+        try {
+          const res = await fetch("http://localhost:5000/api/delivery-orders/location", {
+            method: "PATCH",
+            headers: getAuthHeaders(),
+            body: JSON.stringify(coords)
+          });
 
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            setLocation(coords);
-            toast.success("Live location shared successfully");
-            const mapUrl = `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`;
-            if (previewWin && !previewWin.closed) {
-              previewWin.location.href = mapUrl;
-            } else {
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              setLocation(coords);
+              toast.success("✅ Live location shared successfully!");
+              
+              // Open map in new tab
+              const mapUrl = `https://www.google.com/maps?q=${coords.latitude},${coords.longitude}`;
               window.open(mapUrl, "_blank");
+            } else {
+              toast.error(data.error || "Failed to share live location");
             }
           } else {
-            toast.error(data.error || "Failed to share live location");
+            const errData = await res.json().catch(() => ({}));
+            toast.error(errData.error || "Failed to share live location");
           }
+        } catch (err) {
+          console.error("Error sharing live location:", err);
+          // Only show error toast if it's not a connection issue
+          if (!err.message?.includes('Failed to fetch') && !err.message?.includes('ERR_CONNECTION_REFUSED')) {
+            toast.error("Network error: Failed to share live location");
+          }
+        } finally {
+          setLoading(false);
+        }
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        setLoading(false);
+        
+        if (error.code === error.PERMISSION_DENIED) {
+          setLocationPermissionDenied(true); // Mark permission as denied
+          toast.info("Please use '🏠 Use Hub Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          toast.error("❌ Location information is unavailable.");
+        } else if (error.code === error.TIMEOUT) {
+          toast.error("❌ Location request timed out. Please try again.");
         } else {
-          const errData = await res.json().catch(() => ({}));
-          toast.error(errData.error || "Failed to share live location");
+          toast.error("❌ An error occurred while getting your location.");
         }
-      } catch (err) {
-        console.error("Error sharing live location:", err);
-        // Only show error toast if it's not a connection issue
-        if (!err.message?.includes('Failed to fetch') && !err.message?.includes('ERR_CONNECTION_REFUSED')) {
-          toast.error("Failed to share live location");
-        }
-      }
-    }, (error) => {
-      console.error("Geolocation error:", error);
-      toast.error("Permission denied or unavailable");
-    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 });
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   const getGoogleMapsUrl = (order) => {
@@ -432,6 +551,69 @@ export default function DeliveryDashboard() {
       background: "#fafafa",
       position: "relative"
     }}>
+      {/* Location Permission Banner - Shows when permission is denied */}
+      {!location.latitude && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          background: "#fff3cd",
+          borderBottom: "2px solid #ffc107",
+          padding: "12px 24px",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.1)"
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <span style={{ fontSize: "24px" }}>📍</span>
+            <div>
+              <strong style={{ color: "#856404", fontSize: "14px" }}>Location Permission Required</strong>
+              <div style={{ fontSize: "12px", color: "#856404", marginTop: "4px" }}>
+                Click "Show Instructions" to learn how to enable location access.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              toast.info(
+                <div>
+                  <strong>📍 How to Enable Location Access:</strong>
+                  <br />
+                  <ol style={{ margin: "8px 0 0 0", paddingLeft: "20px", fontSize: "12px" }}>
+                    <li>Click the 🔒 lock icon next to the URL in address bar</li>
+                    <li>Find "Location" permission</li>
+                    <li>Change it from "Block" to "Allow"</li>
+                    <li>Refresh this page (F5)</li>
+                  </ol>
+                  <div style={{ marginTop: "8px", fontSize: "11px", color: "#666" }}>
+                    💡 You may need to click the site settings icon (tune/cog) if location is permanently blocked
+                  </div>
+                </div>,
+                { autoClose: 12000 }
+              );
+            }}
+            style={{
+              background: "#ffc107",
+              color: "#000",
+              border: "none",
+              borderRadius: "6px",
+              padding: "8px 16px",
+              fontSize: "13px",
+              fontWeight: "600",
+              cursor: "pointer",
+              transition: "all 0.2s"
+            }}
+            onMouseEnter={(e) => e.target.style.background = "#ffb300"}
+            onMouseLeave={(e) => e.target.style.background = "#ffc107"}
+          >
+            📖 Show Instructions
+          </button>
+        </div>
+      )}
+      
       {/* Sidebar */}
       <aside style={{
         width: "280px",
@@ -600,42 +782,108 @@ export default function DeliveryDashboard() {
           >
             💰 Earnings & History
           </button>
-          <button
-            onClick={updateLocation}
-            style={{
-              ...navButtonStyle,
-              border: "1px solid #e0e0e0",
-              borderRadius: "8px",
-              backgroundColor: "#ffffff",
-              marginTop: "8px"
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = "#f5f5f5";
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = "#ffffff";
-            }}
-          >
-            📍 Update Location
-          </button>
-          <button
-            onClick={shareLiveLocation}
-            style={{
-              ...navButtonStyle,
-              border: "1px solid #e0e0e0",
-              borderRadius: "8px",
-              backgroundColor: "#ffffff",
-              marginTop: "4px"
-            }}
-            onMouseEnter={(e) => {
-              e.target.style.backgroundColor = "#f5f5f5";
-            }}
-            onMouseLeave={(e) => {
-              e.target.style.backgroundColor = "#ffffff";
-            }}
-          >
-            📡 Share Live Location
-          </button>
+          {/* Location Buttons Section */}
+          <div style={{ marginTop: "8px" }}>
+            {/* Show auto buttons only if permission NOT denied */}
+            {!locationPermissionDenied && (
+              <>
+                <button
+                  onClick={updateLocation}
+                  style={{
+                    ...navButtonStyle,
+                    border: "1px solid #28a745",
+                    borderRadius: "8px",
+                    backgroundColor: "#d4edda",
+                    color: "#155724",
+                    marginBottom: "4px"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.backgroundColor = "#c3e6cb";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.backgroundColor = "#d4edda";
+                  }}
+                >
+                  📍 Update My Location
+                </button>
+                <button
+                  onClick={shareLiveLocation}
+                  style={{
+                    ...navButtonStyle,
+                    border: "1px solid #28a745",
+                    borderRadius: "8px",
+                    backgroundColor: "#d4edda",
+                    color: "#155724",
+                    marginBottom: "4px"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.backgroundColor = "#c3e6cb";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.backgroundColor = "#d4edda";
+                  }}
+                >
+                  📡 Share Live Location
+                </button>
+              </>
+            )}
+            
+            {/* Always show these alternatives */}
+            <button
+              onClick={useDefaultLocation}
+              style={{
+                ...navButtonStyle,
+                border: "1px solid #007bff",
+                borderRadius: "8px",
+                backgroundColor: "#e3f2fd",
+                color: "#0056b3",
+                marginBottom: "4px"
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = "#bbdefb";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = "#e3f2fd";
+              }}
+            >
+              🏠 Use Hub Location
+            </button>
+            <button
+              onClick={() => setShowManualLocationModal(true)}
+              style={{
+                ...navButtonStyle,
+                border: "1px solid #007bff",
+                borderRadius: "8px",
+                backgroundColor: "#e3f2fd",
+                color: "#0056b3",
+                marginBottom: "4px"
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = "#bbdefb";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = "#e3f2fd";
+              }}
+            >
+              ✏️ Manual Location
+            </button>
+            
+            {/* Show hint if permission denied */}
+            {locationPermissionDenied && (
+              <div style={{
+                marginTop: "8px",
+                padding: "8px",
+                background: "#fff3cd",
+                border: "1px solid #ffc107",
+                borderRadius: "6px",
+                fontSize: "11px",
+                color: "#856404",
+                lineHeight: "1.4"
+              }}>
+                ℹ️ Auto-location disabled. Use Hub or Manual location instead.
+              </div>
+            )}
+          </div>
           <hr style={{ margin: "20px 0", border: "none", borderTop: "1px solid #eee" }} />
           <button
             onClick={handleLogout}
@@ -1562,6 +1810,121 @@ export default function DeliveryDashboard() {
                 }}
               >
                 Confirm Pickup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Location Modal */}
+      {showManualLocationModal && (
+        <div style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: "rgba(0, 0, 0, 0.5)",
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          zIndex: 10000
+        }}>
+          <div style={{
+            background: "white",
+            borderRadius: "12px",
+            padding: "30px",
+            maxWidth: "500px",
+            width: "90%",
+            boxShadow: "0 10px 40px rgba(0,0,0,0.2)"
+          }}>
+            <h2 style={{ marginTop: 0, marginBottom: "20px", color: "#5c4033" }}>
+              ✏️ Enter Location Manually
+            </h2>
+            
+            <div style={{ marginBottom: "20px", padding: "12px", background: "#e3f2fd", borderRadius: "6px", fontSize: "13px" }}>
+              <strong>💡 Tip:</strong> Use Google Maps to find coordinates:
+              <ol style={{ margin: "8px 0 0 20px", padding: 0 }}>
+                <li>Open Google Maps</li>
+                <li>Right-click your location</li>
+                <li>Click the coordinates to copy</li>
+              </ol>
+            </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <label style={{ display: "block", marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>
+                Latitude (-90 to 90)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={manualLat}
+                onChange={(e) => setManualLat(e.target.value)}
+                placeholder="e.g., 9.5341"
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "14px"
+                }}
+              />
+            </div>
+
+            <div style={{ marginBottom: "20px" }}>
+              <label style={{ display: "block", marginBottom: "6px", fontWeight: "600", fontSize: "14px" }}>
+                Longitude (-180 to 180)
+              </label>
+              <input
+                type="number"
+                step="any"
+                value={manualLon}
+                onChange={(e) => setManualLon(e.target.value)}
+                placeholder="e.g., 76.7852"
+                style={{
+                  width: "100%",
+                  padding: "10px",
+                  border: "1px solid #ddd",
+                  borderRadius: "6px",
+                  fontSize: "14px"
+                }}
+              />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+              <button
+                onClick={() => {
+                  setShowManualLocationModal(false);
+                  setManualLat("");
+                  setManualLon("");
+                }}
+                style={{
+                  background: "#ccc",
+                  color: "#333",
+                  border: "none",
+                  padding: "10px 20px",
+                  borderRadius: "6px",
+                  cursor: "pointer",
+                  fontSize: "14px"
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={updateManualLocation}
+                disabled={loading}
+                style={{
+                  background: "#007bff",
+                  color: "white",
+                  border: "none",
+                  padding: "10px 20px",
+                  borderRadius: "6px",
+                  cursor: loading ? "not-allowed" : "pointer",
+                  fontSize: "14px",
+                  opacity: loading ? 0.6 : 1
+                }}
+              >
+                {loading ? "Updating..." : "Update Location"}
               </button>
             </div>
           </div>

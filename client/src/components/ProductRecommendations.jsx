@@ -6,6 +6,8 @@ const ProductRecommendations = ({ productId, title = "Recommended Products" }) =
   const [recommendations, setRecommendations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [source, setSource] = useState(null); // 'ml-engine' or 'basic-engine'
+  const [method, setMethod] = useState(null); // 'hybrid', 'content', or 'collaborative'
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -19,6 +21,15 @@ const ProductRecommendations = ({ productId, title = "Recommended Products" }) =
         
         if (data.success) {
           setRecommendations(data.recommendations || []);
+          setSource(data.source || 'basic-engine');
+          setMethod(data.method || 'content-based');
+          
+          // Log for debugging
+          if (data.source === 'ml-engine') {
+            console.log('✅ ML service returned', data.recommendations?.length, 'recommendations using', data.method);
+          } else {
+            console.log('📊 Using basic recommendation engine');
+          }
         } else {
           setError(data.error || 'Failed to load recommendations');
         }
@@ -143,14 +154,53 @@ const ProductRecommendations = ({ productId, title = "Recommended Products" }) =
       border: '1px solid #e0e0e0',
       marginTop: '24px'
     }}>
-      <h3 style={{ 
-        margin: '0 0 20px 0', 
-        color: '#5c4033',
-        fontSize: '20px',
-        fontWeight: '600'
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        marginBottom: '20px',
+        flexWrap: 'wrap',
+        gap: '10px'
       }}>
-        {title}
-      </h3>
+        <h3 style={{ 
+          margin: '0', 
+          color: '#5c4033',
+          fontSize: '20px',
+          fontWeight: '600'
+        }}>
+          {title}
+        </h3>
+        
+        {/* ML Engine Badge */}
+        {source === 'ml-engine' && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '4px 12px',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            borderRadius: '20px',
+            fontSize: '11px',
+            fontWeight: '600',
+            color: '#fff',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
+            boxShadow: '0 2px 8px rgba(102, 126, 234, 0.3)'
+          }}>
+            <span style={{ fontSize: '14px' }}>🤖</span>
+            <span>AI Powered</span>
+            {method && (
+              <span style={{
+                fontSize: '10px',
+                opacity: 0.9,
+                marginLeft: '2px'
+              }}>
+                • {method}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
       
       <div style={{
         display: 'grid',

@@ -475,7 +475,7 @@ router.get("/stats/dashboard", verifyDeliveryToken, async (req, res) => {
   try {
     const agentId = req.agent.agentId;
     
-    // Get delivery statistics
+    // Get delivery statistics - calculate from actual orders in database
     const [totalOrders, deliveredOrders, pendingOrders, agent] = await Promise.all([
       Order.countDocuments({ 'deliveryInfo.agentId': agentId }),
       Order.countDocuments({ 
@@ -486,17 +486,39 @@ router.get("/stats/dashboard", verifyDeliveryToken, async (req, res) => {
         'deliveryInfo.agentId': agentId, 
         orderStatus: { $in: ['shipped', 'picked_up', 'in_transit'] }
       }),
-      DeliveryAgent.findOne({ agentId }).select('totalDeliveries rating earnings')
+      DeliveryAgent.findOne({ agentId }).select('rating')
     ]);
+    
+    // Calculate earnings based on actual delivered orders (₹50 per delivery)
+    const totalEarnings = deliveredOrders * 50;
+    
+    // Get this month's delivered orders
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const monthlyDeliveries = await Order.countDocuments({
+      'deliveryInfo.agentId': agentId,
+      orderStatus: 'delivered',
+      'deliveryInfo.deliveredAt': { $gte: startOfMonth }
+    });
+    
+    const monthlyEarnings = monthlyDeliveries * 50;
+    
+    console.log(`=== DELIVERY STATS FOR ${agentId} ===`);
+    console.log('Total delivered orders:', deliveredOrders);
+    console.log('Total earnings (₹50 × ' + deliveredOrders + '):', totalEarnings);
+    console.log('Monthly deliveries:', monthlyDeliveries);
+    console.log('Monthly earnings (₹50 × ' + monthlyDeliveries + '):', monthlyEarnings);
     
     const stats = {
       totalOrders,
       deliveredOrders,
       pendingOrders,
-      totalDeliveries: agent?.totalDeliveries || 0,
+      totalDeliveries: deliveredOrders, // Use actual count from orders
       rating: agent?.rating || 0,
-      totalEarnings: agent?.earnings?.total || 0,
-      monthlyEarnings: agent?.earnings?.thisMonth || 0
+      totalEarnings: totalEarnings, // Calculate: deliveries × ₹50
+      monthlyEarnings: monthlyEarnings // Calculate: monthly deliveries × ₹50
     };
     
     res.json({
@@ -517,7 +539,7 @@ router.get("/stats/summary", verifyDeliveryToken, async (req, res) => {
   try {
     const agentId = req.agent.agentId;
     
-    // Get delivery statistics
+    // Get delivery statistics - calculate from actual orders in database
     const [totalOrders, deliveredOrders, pendingOrders, agent] = await Promise.all([
       Order.countDocuments({ 'deliveryInfo.agentId': agentId }),
       Order.countDocuments({ 
@@ -528,17 +550,33 @@ router.get("/stats/summary", verifyDeliveryToken, async (req, res) => {
         'deliveryInfo.agentId': agentId, 
         orderStatus: { $in: ['shipped', 'picked_up', 'in_transit'] }
       }),
-      DeliveryAgent.findOne({ agentId }).select('totalDeliveries rating earnings')
+      DeliveryAgent.findOne({ agentId }).select('rating')
     ]);
+    
+    // Calculate earnings based on actual delivered orders (₹50 per delivery)
+    const totalEarnings = deliveredOrders * 50;
+    
+    // Get this month's delivered orders
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const monthlyDeliveries = await Order.countDocuments({
+      'deliveryInfo.agentId': agentId,
+      orderStatus: 'delivered',
+      'deliveryInfo.deliveredAt': { $gte: startOfMonth }
+    });
+    
+    const monthlyEarnings = monthlyDeliveries * 50;
     
     const stats = {
       totalOrders,
       deliveredOrders,
       pendingOrders,
-      totalDeliveries: agent?.totalDeliveries || 0,
+      totalDeliveries: deliveredOrders, // Use actual count from orders
       rating: agent?.rating || 0,
-      totalEarnings: agent?.earnings?.total || 0,
-      monthlyEarnings: agent?.earnings?.thisMonth || 0
+      totalEarnings: totalEarnings, // Calculate: deliveries × ₹50
+      monthlyEarnings: monthlyEarnings // Calculate: monthly deliveries × ₹50
     };
     
     res.json({

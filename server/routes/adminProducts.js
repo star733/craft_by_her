@@ -9,7 +9,7 @@ const mongoose = require("mongoose");
 // 📂 Configure multer storage
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "../uploads")); // save to /uploads
+    cb(null, path.join(__dirname, "../uploads"));
   },
   filename: (req, file, cb) => {
     cb(null, Date.now() + "-" + file.originalname);
@@ -17,7 +17,6 @@ const storage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  // Accept only image files
   if (file.mimetype.startsWith('image/')) {
     cb(null, true);
   } else {
@@ -30,7 +29,6 @@ const upload = multer({
   fileFilter
 });
 
-// Error handling middleware for multer
 const handleMulterError = (err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     return res.status(400).json({ error: err.message });
@@ -40,10 +38,69 @@ const handleMulterError = (err, req, res, next) => {
   next();
 };
 
-// ✅ Get all products from MongoDB
+// ========================================
+// SPECIFIC ROUTES FIRST (before /:id)
+// ========================================
+
+// ✅ Test route
+router.get("/test", (req, res) => {
+  res.json({ message: "Admin products route is working!" });
+});
+
+// ✅ Toggle product status - MUST BE BEFORE /:id
+router.patch("/toggle-status/:id", verify, verifyAdmin, async (req, res) => {
+  try {
+    console.log("\n=== 🔄 TOGGLE PRODUCT STATUS ===");
+    const productId = req.params.id;
+    console.log("Product ID:", productId);
+    
+    const db = mongoose.connection.db;
+    
+    const product = await db.collection("products").findOne(
+      { _id: new mongoose.Types.ObjectId(productId) }
+    );
+    
+    if (!product) {
+      console.log("❌ Product not found");
+      return res.status(404).json({ error: "Product not found" });
+    }
+    
+    const currentStatus = product.isActive !== false;
+    const newStatus = !currentStatus;
+    
+    console.log("Current status:", currentStatus);
+    console.log("New status:", newStatus);
+    
+    await db.collection("products").updateOne(
+      { _id: new mongoose.Types.ObjectId(productId) },
+      { 
+        $set: { 
+          isActive: newStatus,
+          updatedAt: new Date()
+        } 
+      }
+    );
+
+    console.log("✅ Status updated successfully");
+    
+    res.json({ 
+      success: true,
+      message: `Product ${newStatus ? 'enabled' : 'disabled'} successfully`,
+      isActive: newStatus
+    });
+  } catch (err) {
+    console.error("❌ Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ========================================
+// GENERAL ROUTES
+// ========================================
+
+// ✅ Get all products
 router.get("/", async (req, res) => {
   try {
-    // Get products directly from MongoDB collection to avoid model conflicts
     const db = mongoose.connection.db;
     const products = await db.collection("products").find({}).sort({ createdAt: -1 }).toArray();
     console.log(`Found ${products.length} products in database`);
@@ -54,18 +111,14 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ✅ Add new product to MongoDB
+// ✅ Add new product
 router.post("/", verify, verifyAdmin, upload.single("image"), handleMulterError, async (req, res) => {
   try {
     console.log("=== Product Creation Request ===");
-    console.log("Body:", req.body);
-    console.log("File:", req.file);
-    
     const { title, category, stock, variants } = req.body;
     
     const trimmedTitle = (title || '').trim();
     if (!trimmedTitle) {
-      console.log("Missing required field - title:", title);
       return res.status(400).json({ error: "Title is required" });
     }
 
@@ -73,31 +126,25 @@ router.post("/", verify, verifyAdmin, upload.single("image"), handleMulterError,
       return res.status(400).json({ error: "Title must be at least 3 characters" });
     }
 
-    // Letters and spaces only
     if (!/^[A-Za-z\s]+$/.test(trimmedTitle)) {
       return res.status(400).json({ error: "Title can contain letters and spaces only" });
     }
 
     if (!category) {
-      console.log("Missing required field - category:", category);
       return res.status(400).json({ error: "Category is required" });
     }
 
     if (!stock) {
-      console.log("Missing required field - stock:", stock);
       return res.status(400).json({ error: "Stock is required" });
     }
 
     let parsedVariants = [];
     try {
       parsedVariants = JSON.parse(variants || "[]");
-      console.log("Parsed variants:", parsedVariants);
     } catch (parseErr) {
-      console.log("Variants parse error:", parseErr);
       return res.status(400).json({ error: "Invalid variants format" });
     }
 
-    // Save to MongoDB directly
     const db = mongoose.connection.db;
     const product = {
       title: trimmedTitle,
@@ -105,6 +152,7 @@ router.post("/", verify, verifyAdmin, upload.single("image"), handleMulterError,
       stock: parseInt(stock),
       variants: parsedVariants,
       image: req.file ? req.file.filename : null,
+      isActive: true,
       createdAt: new Date(),
       updatedAt: new Date()
     };
@@ -120,7 +168,7 @@ router.post("/", verify, verifyAdmin, upload.single("image"), handleMulterError,
   }
 });
 
-// ✅ Update product in MongoDB
+// ✅ Update product
 router.put("/:id", verify, verifyAdmin, upload.single("image"), handleMulterError, async (req, res) => {
   try {
     const rawTitle = (req.body.title || '').trim();
@@ -165,7 +213,7 @@ router.put("/:id", verify, verifyAdmin, upload.single("image"), handleMulterErro
   }
 });
 
-// ✅ Delete product from MongoDB
+// ✅ Delete product (kept for backward compatibility)
 router.delete("/:id", verify, verifyAdmin, async (req, res) => {
   try {
     const db = mongoose.connection.db;

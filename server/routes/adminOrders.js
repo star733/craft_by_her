@@ -20,13 +20,18 @@ router.get("/", verify, verifyAdmin, async (req, res) => {
     
     // Format orders for admin display
     const formattedOrders = orders.map(order => ({
+      _id: order._id,
       id: order._id,
       orderNumber: order.orderNumber,
       customer: order.buyerDetails.name,
       email: order.buyerDetails.email,
       phone: order.buyerDetails.phone,
+      buyerDetails: order.buyerDetails,
       total: order.finalAmount,
+      totalAmount: order.totalAmount,
+      finalAmount: order.finalAmount,
       status: order.orderStatus,
+      orderStatus: order.orderStatus,
       paymentStatus: order.paymentStatus,
       paymentMethod: order.paymentMethod,
       date: new Date(order.createdAt).toLocaleDateString(),
@@ -39,6 +44,8 @@ router.get("/", verify, verifyAdmin, async (req, res) => {
       })),
       address: order.buyerDetails.address,
       notes: order.notes,
+      deliveryInfo: order.deliveryInfo,
+      refundDetails: order.refundDetails || null,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt
     }));
@@ -234,6 +241,156 @@ router.get("/delivery-agents/available", verify, verifyAdmin, async (req, res) =
       success: false,
       error: err.message 
     });
+  }
+});
+
+// ✅ Process/Complete Refund (Admin only)
+router.put("/:orderId/refund/process", verify, verifyAdmin, async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { refundStatus, refundTransactionId, refundNotes } = req.body;
+    
+    const order = await Order.findById(orderId);
+    
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+    
+    if (order.orderStatus !== "cancelled") {
+      return res.status(400).json({ error: "Only cancelled orders can be refunded" });
+    }
+    
+    if (order.paymentStatus !== "refunded") {
+      return res.status(400).json({ error: "Order is not marked for refund" });
+    }
+    
+    // Update refund details
+    order.refundDetails.refundStatus = refundStatus || "processing";
+    
+    if (refundTransactionId) {
+      order.refundDetails.refundTransactionId = refundTransactionId;
+    }
+    
+    if (refundNotes) {
+      order.refundDetails.refundNotes = refundNotes;
+    }
+    
+    if (refundStatus === "completed") {
+      order.refundDetails.refundCompletedAt = new Date();
+    }
+    
+    await order.save();
+    
+    console.log(`✅ Refund ${refundStatus} for order ${order.orderNumber}: ₹${order.refundDetails.refundAmount}`);
+    
+    res.json({
+      success: true,
+      message: `Refund ${refundStatus} successfully`,
+      order: order,
+      refundDetails: order.refundDetails,
+    });
+  } catch (err) {
+    console.error("Error processing refund:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Get pending refunds (Admin only)
+router.get("/refunds/pending", verify, verifyAdmin, async (req, res) => {
+  try {
+    const pendingRefunds = await Order.find({
+      orderStatus: "cancelled",
+      paymentStatus: "refunded",
+      "refundDetails.refundStatus": { $in: ["pending", "processing"] }
+    })
+    .sort({ "refundDetails.refundInitiatedAt": -1 })
+    .populate("items.productId", "title image")
+    .lean();
+    
+    console.log(`Found ${pendingRefunds.length} pending refunds`);
+    
+    res.json({
+      success: true,
+      refunds: pendingRefunds,
+      total: pendingRefunds.length,
+    });
+  } catch (err) {
+    console.error("Error fetching pending refunds:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Get refund statistics (Admin only)
+router.get("/refunds/stats", verify, verifyAdmin, async (req, res) => {
+  try {
+    const totalRefunds = await Order.countDocuments({
+      orderStatus: "cancelled",
+      paymentStatus: "refunded",
+    });
+    
+    const pendingRefunds = await Order.countDocuments({
+      orderStatus: "cancelled",
+      paymentStatus: "refunded",
+      "refundDetails.refundStatus": "pending",
+    });
+    
+    const processingRefunds = await Order.countDocuments({
+      orderStatus: "cancelled",
+      paymentStatus: "refunded",
+      "refundDetails.refundStatus": "processing",
+    });
+    
+    const completedRefunds = await Order.countDocuments({
+      orderStatus: "cancelled",
+      paymentStatus: "refunded",
+      "refundDetails.refundStatus": "completed",
+    });
+    
+    const totalRefundAmount = await Order.aggregate([
+      {
+        $match: {
+          orderStatus: "cancelled",
+          paymentStatus: "refunded",
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$refundDetails.refundAmount" }
+        }
+      }
+    ]);
+    
+    const pendingRefundAmount = await Order.aggregate([
+      {
+        $match: {
+          orderStatus: "cancelled",
+          paymentStatus: "refunded",
+          "refundDetails.refundStatus": { $in: ["pending", "processing"] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$refundDetails.refundAmount" }
+        }
+      }
+    ]);
+    
+    res.json({
+      success: true,
+      stats: {
+        totalRefunds,
+        pendingRefunds,
+        processingRefunds,
+        completedRefunds,
+        totalRefundAmount: totalRefundAmount[0]?.total || 0,
+        pendingRefundAmount: pendingRefundAmount[0]?.total || 0,
+      },
+    });
+  } catch (err) {
+    console.error("Error fetching refund stats:", err);
+    res.status(500).json({ error: err.message });
   }
 });
 

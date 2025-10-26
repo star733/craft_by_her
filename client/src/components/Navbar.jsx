@@ -21,6 +21,35 @@ export default function Navbar() {
   const isCartPage = location.pathname.startsWith('/cart');
   const isWishlistPage = location.pathname.startsWith('/wishlist');
 
+  // Helper function to clean display name (remove codes like "MCA2024-2026")
+  const cleanDisplayName = (rawName) => {
+    if (!rawName) return 'User';
+    
+    // Split by space and filter out words containing numbers or all caps codes
+    const words = rawName.split(/\s+/);
+    const nameWords = words.filter(word => {
+      // Remove words with numbers
+      if (/\d/.test(word)) return false;
+      
+      // Remove all-caps words with 3+ characters (like "MCA", "MBA", etc.)
+      if (word.length >= 3 && word === word.toUpperCase()) return false;
+      
+      // Keep the word
+      return true;
+    });
+    
+    // If we filtered everything, just take first 2 words
+    if (nameWords.length === 0) {
+      return rawName.split(/\s+/).slice(0, 2).join(' ');
+    }
+    
+    // Get first 2-3 name words and format to Title Case
+    const finalWords = nameWords.slice(0, Math.min(3, nameWords.length));
+    return finalWords
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
   // load user info whenever route changes
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (user) => {
@@ -41,24 +70,27 @@ export default function Navbar() {
             const backendName = data.user?.name;
             const firebaseName = user.displayName;
             const emailName = user.email?.split('@')[0];
-            setUserName(backendName || firebaseName || emailName || 'User');
+            
+            // Use backend name if available, otherwise clean Firebase name
+            const finalName = backendName || cleanDisplayName(firebaseName) || emailName || 'User';
+            setUserName(finalName);
           } else {
             // API failed, default to buyer role
             console.log('Auth API not available, using default role');
             setUserRole('buyer');
-            // Fallback to Firebase name or email username
+            // Fallback to cleaned Firebase name or email username
             const firebaseName = user.displayName;
             const emailName = user.email?.split('@')[0];
-            setUserName(firebaseName || emailName || 'User');
+            setUserName(cleanDisplayName(firebaseName) || emailName || 'User');
           }
         } catch (error) {
           // Network error or other issues, default to buyer role
           console.log('Auth API error, using default role:', error.message);
           setUserRole('buyer');
-          // Fallback to Firebase name or email username
-          const firebaseName = user.displayName;
-          const emailName = user.email?.split('@')[0];
-          setUserName(firebaseName || emailName || 'User');
+            // Fallback to cleaned Firebase name or email username
+            const firebaseName = user.displayName;
+            const emailName = user.email?.split('@')[0];
+            setUserName(cleanDisplayName(firebaseName) || emailName || 'User');
         }
       } else {
         setUserRole(null);
@@ -220,7 +252,7 @@ export default function Navbar() {
                   alignItems: 'center',
                   gap: '4px'
                 }}>
-                  Hi, {user?.displayName || user?.providerData?.[0]?.displayName || 'User'}
+                  Hi, {userName}
                 </span>
               )}
 

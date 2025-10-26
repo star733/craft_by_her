@@ -39,6 +39,7 @@ app.use("/api/admin/orders", require("./routes/adminOrders"));
 app.use("/api/admin/users", require("./routes/userManagement"));
 app.use("/api/addresses", require("./routes/addresses"));
 app.use("/api/recommend", require("./routes/recommendations"));
+app.use("/api/delivery-check", require("./routes/deliveryCheck"));
 // Removed adminCategories route to fix the ObjectId error
 
 // Serve uploaded images

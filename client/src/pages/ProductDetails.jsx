@@ -5,6 +5,7 @@ import { toast } from "react-toastify";
 import { FiShare2, FiCopy, FiMail, FiMessageCircle, FiInstagram, FiFacebook, FiTwitter } from "react-icons/fi";
 import ProductRecommendations from "../components/ProductRecommendations";
 import "react-toastify/dist/ReactToastify.css";
+import "../styles/ProductDetails.css";
 
 export default function ProductDetails() {
   const { id } = useParams();
@@ -12,7 +13,7 @@ export default function ProductDetails() {
   const [product, setProduct] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selectedVariant, setSelectedVariant] = useState(null);
-  const [quantity, setQuantity] = useState(1);
+  const [quantity] = useState(1); // Fixed at 1, no UI controls
   const [isInWishlist, setIsInWishlist] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
   const [addingToWishlist, setAddingToWishlist] = useState(false);
@@ -174,7 +175,7 @@ export default function ProductDetails() {
       title: product?.title || "",
       image: product?.image || "",
       variant: selectedVariant,
-      quantity: quantity || 1
+      quantity: quantity
     };
     navigate("/checkout", { state: { cartItems: [item] } });
   };
@@ -184,14 +185,6 @@ export default function ProductDetails() {
       navigate("/cart/authenticated");
     } else {
       navigate("/cart");
-    }
-  };
-
-  const handleQuantityChange = (newQuantity) => {
-    if (newQuantity >= 1 && newQuantity <= 10) {
-      setQuantity(newQuantity);
-      // Reset cart state when quantity changes
-      setItemAddedToCart(false);
     }
   };
 
@@ -313,9 +306,9 @@ export default function ProductDetails() {
 
   if (loading) {
     return (
-      <div style={containerStyle}>
-        <div style={loadingStyle}>
-          <div style={spinnerStyle}></div>
+      <div className="product-details-container">
+        <div className="product-details-loading">
+          <div className="product-details-spinner"></div>
           <p>Loading product details...</p>
         </div>
       </div>
@@ -324,10 +317,10 @@ export default function ProductDetails() {
 
   if (!product) {
     return (
-      <div style={containerStyle}>
-        <div style={errorStyle}>
+      <div className="product-details-container">
+        <div className="product-details-error">
           <h2>Product not found</h2>
-          <button onClick={() => navigate("/products")} style={buttonPrimary}>
+          <button onClick={() => navigate("/products")} className="product-button-primary">
             Back to Products
           </button>
         </div>
@@ -382,20 +375,20 @@ export default function ProductDetails() {
     : "/images/placeholder.png";
 
   return (
-    <div style={containerStyle}>
-      <div style={breadcrumbStyle}>
-        <button onClick={() => navigate("/products")} style={breadcrumbButtonStyle}>
+    <div className="product-details-container">
+      <div className="product-breadcrumb">
+        <button onClick={() => navigate("/products")} className="product-breadcrumb-button">
           ← Back to Products
         </button>
       </div>
 
-      <div style={productContainerStyle}>
+      <div className="product-container">
         {/* Product Image */}
-        <div style={imageContainerStyle}>
+        <div className="product-image-container">
           <img
             src={imageUrl}
             alt={product.title}
-            style={productImageStyle}
+            className="product-image"
             onError={(e) => {
               e.target.src = "/images/placeholder.png";
             }}
@@ -403,109 +396,71 @@ export default function ProductDetails() {
         </div>
 
         {/* Product Details */}
-        <div style={detailsContainerStyle}>
-          <h1 style={titleStyle}>{product.title}</h1>
+        <div className="product-details">
+          <h1 className="product-title">{product.title}</h1>
           
           {/* Product Description */}
-          <div style={descriptionStyle}>
-            <p style={descriptionTextStyle}>
+          <div className="product-description">
+            <p className="product-description-text">
               {getProductDescription(product)}
             </p>
           </div>
           
-          <div style={categoryStyle}>
-            <span style={categoryLabelStyle}>Category:</span>
-            <span style={categoryValueStyle}>{product.category?.name || product.category || "Uncategorized"}</span>
+          <div className="product-category">
+            <span className="product-category-label">Category:</span>
+            <span className="product-category-value">{product.category?.name || product.category || "Uncategorized"}</span>
           </div>
 
           {/* Stock Status - Only show when out of stock */}
           {(product.stock === 0 || product.stock === '0' || !product.stock || product.stock <= 0) && (
-            <div style={stockContainerStyle}>
-              <span style={stockLabelStyle}>Stock Status:</span>
-              <span style={{
-                ...stockValueStyle,
-                color: '#dc3545'
-              }}>
+            <div className="product-stock-container">
+              <span className="product-stock-label">Stock Status:</span>
+              <span className="product-stock-value out-of-stock">
                 Out of Stock
               </span>
             </div>
           )}
 
           {/* Variants */}
-          <div style={variantsContainerStyle}>
-            <h3 style={variantsTitleStyle}>Available Options:</h3>
+          <div className="product-variants-container">
+            <h3 className="product-variants-title">Available Options:</h3>
             {product.variants && product.variants.length > 0 ? (
-              <div style={variantsListStyle}>
+              <div className="product-variants-list">
                 {product.variants.map((variant, index) => (
                   <div
                     key={index}
-                    style={{
-                      ...variantItemStyle,
-                      ...(selectedVariant?.weight === variant.weight && selectedVariant?.price === variant.price
-                        ? selectedVariantStyle
-                        : {}),
-                    }}
+                    className={`product-variant-item ${selectedVariant?.weight === variant.weight && selectedVariant?.price === variant.price ? 'selected' : ''}`}
                     onClick={() => handleVariantChange(variant)}
                   >
-                    <span style={variantWeightStyle}>{variant.weight}</span>
-                    <span style={variantPriceStyle}>₹{variant.price}</span>
+                    <span className="product-variant-weight">{variant.weight}</span>
+                    <span className="product-variant-price">₹{variant.price}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <div style={variantsListStyle}>
-                <div
-                  style={{
-                    ...variantItemStyle,
-                    ...selectedVariantStyle,
-                  }}
-                >
-                  <span style={variantWeightStyle}>1 piece</span>
-                  <span style={variantPriceStyle}>₹{product.price}</span>
+              <div className="product-variants-list">
+                <div className="product-variant-item selected">
+                  <span className="product-variant-weight">1 piece</span>
+                  <span className="product-variant-price">₹{product.price}</span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Quantity Selector */}
-          <div style={quantityContainerStyle}>
-            <label style={quantityLabelStyle}>Quantity:</label>
-            <div style={quantitySelectorStyle}>
-              <button
-                onClick={() => handleQuantityChange(Math.max(1, quantity - 1))}
-                style={quantityButtonStyle}
-                disabled={quantity <= 1}
-              >
-                -
-              </button>
-              <span style={quantityValueStyle}>{quantity}</span>
-              <button
-                onClick={() => handleQuantityChange(quantity + 1)}
-                style={quantityButtonStyle}
-              >
-                +
-              </button>
-            </div>
-          </div>
-
           {/* Price Display */}
           {selectedVariant && (
-            <div style={priceContainerStyle}>
-              <span style={priceLabelStyle}>Total Price:</span>
-              <span style={priceValueStyle}>₹{(selectedVariant.price * quantity).toFixed(2)}</span>
+            <div className="product-price-container">
+              <span className="product-price-label">Price:</span>
+              <span className="product-price-value">₹{Number(selectedVariant.price).toFixed(2)}</span>
             </div>
           )}
 
           {/* Action Buttons */}
-          <div style={actionsContainerStyle}>
+          <div className="product-actions-container">
             <button
               onClick={itemAddedToCart ? handleGoToCart : handleAddToCart}
               disabled={!selectedVariant || addingToCart || product.stock <= 0}
-              style={{
-                ...buttonPrimary,
-                ...(addingToCart || product.stock <= 0 ? buttonDisabled : {}),
-                ...(itemAddedToCart ? { backgroundColor: "#8B4513" } : {}),
-              }}
+              className={`product-button-primary ${itemAddedToCart ? 'go-to-cart' : ''} ${(addingToCart || product.stock <= 0) ? 'product-button-disabled' : ''}`}
             >
               {addingToCart 
                 ? "Adding..." 
@@ -520,11 +475,7 @@ export default function ProductDetails() {
             <button
               onClick={handleBuyNow}
               disabled={!selectedVariant || product.stock <= 0}
-              style={{
-                ...buttonPrimary,
-                backgroundColor: "#3e0e0e",
-                ...(product.stock <= 0 ? buttonDisabled : {}),
-              }}
+              className={`product-button-primary buy-now ${product.stock <= 0 ? 'product-button-disabled' : ''}`}
             >
               ⚡ Buy Now
             </button>
@@ -532,10 +483,7 @@ export default function ProductDetails() {
             <button
               onClick={handleWishlistToggle}
               disabled={addingToWishlist}
-              style={{
-                ...buttonSecondary,
-                ...(addingToWishlist ? buttonDisabled : {}),
-              }}
+              className={`product-button-secondary ${addingToWishlist ? 'product-button-disabled' : ''}`}
             >
               {addingToWishlist 
                 ? "Updating..." 
@@ -547,15 +495,7 @@ export default function ProductDetails() {
 
             <button
               onClick={() => setShowShareMenu(!showShareMenu)}
-              style={{
-                ...buttonSecondary,
-                backgroundColor: "#6c757d",
-                color: "white",
-                border: "none",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-              }}
+              className="product-button-share"
             >
               <FiShare2 size={16} />
               Share
@@ -564,143 +504,34 @@ export default function ProductDetails() {
 
           {/* Share Menu */}
           {showShareMenu && (
-            <div 
-              data-share-menu
-              style={{
-                position: "absolute",
-                top: "100%",
-                right: "0",
-                backgroundColor: "white",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-                padding: "12px",
-                zIndex: 1000,
-                minWidth: "200px",
-                marginTop: "8px"
-              }}
-            >
-              <div style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(2, 1fr)",
-                gap: "8px"
-              }}>
-                <button
-                  onClick={handleWhatsAppShare}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 12px",
-                    border: "none",
-                    borderRadius: "6px",
-                    backgroundColor: "#25D366",
-                    color: "white",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "500"
-                  }}
-                >
+            <div data-share-menu className="product-share-menu">
+              <div className="product-share-grid">
+                <button onClick={handleWhatsAppShare} className="product-share-button whatsapp">
                   <FiMessageCircle size={16} />
                   WhatsApp
                 </button>
 
-                <button
-                  onClick={handleEmailShare}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 12px",
-                    border: "none",
-                    borderRadius: "6px",
-                    backgroundColor: "#007bff",
-                    color: "white",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "500"
-                  }}
-                >
+                <button onClick={handleEmailShare} className="product-share-button email">
                   <FiMail size={16} />
                   Email
                 </button>
 
-                <button
-                  onClick={handleInstagramShare}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 12px",
-                    border: "none",
-                    borderRadius: "6px",
-                    backgroundColor: "#E4405F",
-                    color: "white",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "500"
-                  }}
-                >
+                <button onClick={handleInstagramShare} className="product-share-button instagram">
                   <FiInstagram size={16} />
                   Instagram
                 </button>
 
-                <button
-                  onClick={handleFacebookShare}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 12px",
-                    border: "none",
-                    borderRadius: "6px",
-                    backgroundColor: "#1877F2",
-                    color: "white",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "500"
-                  }}
-                >
+                <button onClick={handleFacebookShare} className="product-share-button facebook">
                   <FiFacebook size={16} />
                   Facebook
                 </button>
 
-                <button
-                  onClick={handleTwitterShare}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 12px",
-                    border: "none",
-                    borderRadius: "6px",
-                    backgroundColor: "#1DA1F2",
-                    color: "white",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "500"
-                  }}
-                >
+                <button onClick={handleTwitterShare} className="product-share-button twitter">
                   <FiTwitter size={16} />
                   Twitter
                 </button>
 
-                <button
-                  onClick={handleCopyLink}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    padding: "8px 12px",
-                    border: "none",
-                    borderRadius: "6px",
-                    backgroundColor: "#6c757d",
-                    color: "white",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                    fontWeight: "500"
-                  }}
-                >
+                <button onClick={handleCopyLink} className="product-share-button copy">
                   <FiCopy size={16} />
                   Copy Link
                 </button>
@@ -720,306 +551,3 @@ export default function ProductDetails() {
     </div>
   );
 }
-
-// Styles
-const containerStyle = {
-  minHeight: "100vh",
-  background: "#f8fafc",
-  padding: "20px",
-  fontFamily: "Inter, sans-serif",
-};
-
-const loadingStyle = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  minHeight: "50vh",
-  gap: "20px",
-};
-
-const spinnerStyle = {
-  width: "40px",
-  height: "40px",
-  border: "4px solid #f3f3f3",
-  borderTop: "4px solid #5c4033",
-  borderRadius: "50%",
-  animation: "spin 1s linear infinite",
-};
-
-const errorStyle = {
-  textAlign: "center",
-  padding: "40px",
-  background: "#fff",
-  borderRadius: "12px",
-  boxShadow: "0 2px 10px rgba(0,0,0,0.1)",
-};
-
-const breadcrumbStyle = {
-  marginBottom: "20px",
-};
-
-const breadcrumbButtonStyle = {
-  background: "none",
-  border: "none",
-  color: "#5c4033",
-  fontSize: "14px",
-  cursor: "pointer",
-  textDecoration: "underline",
-  padding: "8px 0",
-};
-
-const productContainerStyle = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: "40px",
-  background: "#fff",
-  borderRadius: "16px",
-  padding: "40px",
-  boxShadow: "0 4px 20px rgba(0,0,0,0.1)",
-};
-
-const imageContainerStyle = {
-  position: "relative",
-  overflow: "hidden",
-  borderRadius: "12px",
-};
-
-const productImageStyle = {
-  width: "100%",
-  height: "400px",
-  objectFit: "cover",
-  borderRadius: "12px",
-};
-
-const detailsContainerStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "24px",
-};
-
-const titleStyle = {
-  fontSize: "32px",
-  fontWeight: "700",
-  color: "#5c4033",
-  margin: "0",
-  lineHeight: "1.2",
-};
-
-const descriptionStyle = {
-  background: "#f9f7f5",
-  padding: "20px",
-  borderRadius: "12px",
-  border: "1px solid #e0e0e0",
-  marginBottom: "20px",
-};
-
-const descriptionTextStyle = {
-  fontSize: "16px",
-  lineHeight: "1.6",
-  color: "#555",
-  margin: "0",
-  fontStyle: "italic",
-};
-
-const categoryStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-};
-
-const categoryLabelStyle = {
-  fontSize: "14px",
-  color: "#666",
-  fontWeight: "500",
-};
-
-const categoryValueStyle = {
-  fontSize: "16px",
-  color: "#5c4033",
-  fontWeight: "600",
-  background: "#f0f0f0",
-  padding: "4px 12px",
-  borderRadius: "20px",
-};
-
-const stockContainerStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "8px",
-};
-
-const stockLabelStyle = {
-  fontSize: "14px",
-  color: "#666",
-  fontWeight: "500",
-};
-
-const stockValueStyle = {
-  fontSize: "16px",
-  fontWeight: "600",
-  padding: "4px 12px",
-  borderRadius: "20px",
-  background: "#f0f0f0",
-};
-
-const variantsContainerStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: "16px",
-};
-
-const variantsTitleStyle = {
-  fontSize: "18px",
-  fontWeight: "600",
-  color: "#333",
-  margin: "0",
-};
-
-const variantsListStyle = {
-  display: "flex",
-  flexWrap: "wrap",
-  gap: "12px",
-};
-
-const variantItemStyle = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  padding: "16px",
-  border: "2px solid #e0e0e0",
-  borderRadius: "12px",
-  cursor: "pointer",
-  transition: "all 0.3s ease",
-  minWidth: "120px",
-};
-
-const selectedVariantStyle = {
-  borderColor: "#5c4033",
-  background: "#f9f7f5",
-  transform: "translateY(-2px)",
-  boxShadow: "0 4px 12px rgba(92, 64, 51, 0.2)",
-};
-
-const variantWeightStyle = {
-  fontSize: "16px",
-  fontWeight: "600",
-  color: "#333",
-  marginBottom: "4px",
-};
-
-const variantPriceStyle = {
-  fontSize: "18px",
-  fontWeight: "700",
-  color: "#5c4033",
-};
-
-const quantityContainerStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "16px",
-};
-
-const quantityLabelStyle = {
-  fontSize: "16px",
-  fontWeight: "600",
-  color: "#333",
-};
-
-const quantitySelectorStyle = {
-  display: "flex",
-  alignItems: "center",
-  border: "2px solid #e0e0e0",
-  borderRadius: "8px",
-  overflow: "hidden",
-};
-
-const quantityButtonStyle = {
-  background: "#5c4033",
-  color: "#fff",
-  border: "none",
-  padding: "12px 16px",
-  cursor: "pointer",
-  fontSize: "18px",
-  fontWeight: "600",
-  transition: "background 0.3s ease",
-};
-
-const quantityValueStyle = {
-  padding: "12px 20px",
-  fontSize: "16px",
-  fontWeight: "600",
-  background: "#fff",
-  minWidth: "60px",
-  textAlign: "center",
-};
-
-const priceContainerStyle = {
-  display: "flex",
-  alignItems: "center",
-  gap: "12px",
-  padding: "16px",
-  background: "#f9f7f5",
-  borderRadius: "12px",
-  border: "2px solid #5c4033",
-};
-
-const priceLabelStyle = {
-  fontSize: "16px",
-  fontWeight: "600",
-  color: "#333",
-};
-
-const priceValueStyle = {
-  fontSize: "24px",
-  fontWeight: "700",
-  color: "#5c4033",
-};
-
-const actionsContainerStyle = {
-  display: "flex",
-  gap: "16px",
-  marginTop: "8px",
-  position: "relative",
-};
-
-const buttonPrimary = {
-  background: "#5c4033",
-  color: "#fff",
-  border: "none",
-  padding: "12px 24px",
-  borderRadius: "8px",
-  fontSize: "14px",
-  fontWeight: "600",
-  cursor: "pointer",
-  transition: "all 0.3s ease",
-  flex: "1",
-};
-
-const buttonSecondary = {
-  background: "#fff",
-  color: "#5c4033",
-  border: "2px solid #5c4033",
-  padding: "12px 24px",
-  borderRadius: "8px",
-  fontSize: "14px",
-  fontWeight: "600",
-  cursor: "pointer",
-  transition: "all 0.3s ease",
-  flex: "1",
-};
-
-const buttonDisabled = {
-  opacity: "0.6",
-  cursor: "not-allowed",
-};
-
-// Add CSS animation for spinner
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
-document.head.appendChild(style);

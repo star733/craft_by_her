@@ -5,7 +5,6 @@ import {
   FiBox,
   FiHeart,
   FiShoppingCart,
-  FiUser,
   FiHome,
   FiHelpCircle,
   FiLogOut,
@@ -17,9 +16,11 @@ import { auth } from "../firebase";
 import { signOut } from "firebase/auth";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useConfirm } from "../context/ConfirmContext";
 
 export default function Account() {
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
   const [user, setUser] = useState(null);
   const [userName, setUserName] = useState("");
   const [cart, setCart] = useState({ items: [], totalAmount: 0 });
@@ -27,6 +28,7 @@ export default function Account() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
+  const [addressRefreshKey, setAddressRefreshKey] = useState(0);
 
   // Listen for tab change requests from Overview quick actions
   useEffect(() => {
@@ -44,6 +46,42 @@ export default function Account() {
     return () => window.removeEventListener("acct:setTab", handler);
   }, []);
 
+  // Refresh addresses whenever the addresses tab is opened
+  useEffect(() => {
+    if (tab === "addresses") {
+      setAddressRefreshKey(prev => prev + 1);
+    }
+  }, [tab]);
+
+  // Helper function to clean display name (remove codes like "MCA2024-2026")
+  const cleanDisplayName = (rawName) => {
+    if (!rawName) return 'User';
+    
+    // Split by space and filter out words containing numbers or all caps codes
+    const words = rawName.split(/\s+/);
+    const nameWords = words.filter(word => {
+      // Remove words with numbers
+      if (/\d/.test(word)) return false;
+      
+      // Remove all-caps words with 3+ characters (like "MCA", "MBA", etc.)
+      if (word.length >= 3 && word === word.toUpperCase()) return false;
+      
+      // Keep the word
+      return true;
+    });
+    
+    // If we filtered everything, just take first 2 words
+    if (nameWords.length === 0) {
+      return rawName.split(/\s+/).slice(0, 2).join(' ');
+    }
+    
+    // Get first 2-3 name words and format to Title Case
+    const finalWords = nameWords.slice(0, Math.min(3, nameWords.length));
+    return finalWords
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(' ');
+  };
+
   useEffect(() => {
     if (!auth.currentUser) {
       navigate("/login");
@@ -51,8 +89,34 @@ export default function Account() {
     }
 
     setUser(auth.currentUser);
-    fetchUserData();
+    syncUserAndFetchData();
   }, [navigate]);
+
+  const syncUserAndFetchData = async () => {
+    try {
+      // First, sync user to MongoDB
+      const token = await auth.currentUser.getIdToken();
+      await fetch("http://localhost:5000/api/auth/sync", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          email: auth.currentUser.email,
+          displayName: auth.currentUser.displayName,
+          photoURL: auth.currentUser.photoURL,
+        }),
+      });
+
+      // Then fetch user data
+      await fetchUserData();
+    } catch (error) {
+      console.error("Sync error:", error);
+      // Still try to fetch data even if sync fails
+      await fetchUserData();
+    }
+  };
 
   const fetchUserData = async () => {
     try {
@@ -81,12 +145,15 @@ export default function Account() {
         const backendName = profileData.user?.name;
         const firebaseName = auth.currentUser.displayName;
         const emailName = auth.currentUser.email?.split('@')[0];
-        setUserName(backendName || firebaseName || emailName || 'User');
+        
+        // Use backend name if available, otherwise clean Firebase name
+        const finalName = backendName || cleanDisplayName(firebaseName) || emailName || 'User';
+        setUserName(finalName);
       } else {
-        // Fallback to Firebase name or email username
+        // Fallback to cleaned Firebase name or email username
         const firebaseName = auth.currentUser.displayName;
         const emailName = auth.currentUser.email?.split('@')[0];
-        setUserName(firebaseName || emailName || 'User');
+        setUserName(cleanDisplayName(firebaseName) || emailName || 'User');
       }
 
       if (cartResponse.ok) {
@@ -109,7 +176,7 @@ export default function Account() {
       // Set fallback name even on error
       const firebaseName = auth.currentUser?.displayName;
       const emailName = auth.currentUser?.email?.split('@')[0];
-      setUserName(firebaseName || emailName || 'User');
+      setUserName(cleanDisplayName(firebaseName) || emailName || 'User');
     } finally {
       setLoading(false);
     }
@@ -169,9 +236,6 @@ export default function Account() {
           <NavItem k="wishlist" icon={FiHeart} count={wishlist.products?.length || 0}>
             Wishlist
           </NavItem>
-          <NavItem k="profile" icon={FiUser}>
-            Profile
-          </NavItem>
           <NavItem k="addresses" icon={FiHome}>
             Addresses
           </NavItem>
@@ -200,8 +264,7 @@ export default function Account() {
         {tab === "orders" && <OrdersSection orders={orders} onRefresh={fetchUserData} />}
         {tab === "cart" && <CartSection cart={cart} onRefresh={fetchUserData} />}
         {tab === "wishlist" && <WishlistSection wishlist={wishlist} onRefresh={fetchUserData} />}
-        {tab === "profile" && <ProfileSection user={user} />}
-        {tab === "addresses" && <Addresses />}
+        {tab === "addresses" && <Addresses refreshKey={addressRefreshKey} />}
         {tab === "support" && <Support />}
       </section>
     </main>
@@ -439,13 +502,27 @@ function OrdersSection({ orders, onRefresh }) {
                         const token = await auth.currentUser.getIdToken();
                         const resp = await fetch(`http://localhost:5000/api/orders/${order._id}/cancel`, {
                           method: "PUT",
-                          headers: { Authorization: `Bearer ${token}` }
+                          headers: { 
+                            Authorization: `Bearer ${token}`,
+                            "Content-Type": "application/json"
+                          },
+                          body: JSON.stringify({
+                            cancelReason: "Order cancelled by customer from account page"
+                          })
                         });
                         if (!resp.ok) {
                           const err = await resp.json().catch(() => ({}));
                           throw new Error(err.error || "Failed to cancel order");
                         }
-                        toast.success("Order cancelled");
+                        
+                        const result = await resp.json();
+                        
+                        if (result.refundInfo && result.refundInfo.refundStatus !== "not_applicable") {
+                          toast.success("Order cancelled! Refund will be processed within 5-7 business days.");
+                        } else {
+                          toast.success("Order cancelled successfully!");
+                        }
+                        
                         onRefresh();
                       } catch (e) {
                         console.error("Cancel error:", e);
@@ -460,7 +537,15 @@ function OrdersSection({ orders, onRefresh }) {
                   <button
                     className="bk-btn bk-btn--pill bk-btn--danger"
                     onClick={async () => {
-                      if (!confirm("Delete this cancelled order? This cannot be undone.")) return;
+                      const confirmed = await confirm({
+                        title: 'Delete Order',
+                        message: 'Delete this cancelled order? This action cannot be undone.',
+                        type: 'danger',
+                        confirmText: 'Delete'
+                      });
+                      
+                      if (!confirmed) return;
+                      
                       try {
                         const token = await auth.currentUser.getIdToken();
                         const resp = await fetch(`http://localhost:5000/api/orders/${order._id}`, {
@@ -797,55 +882,7 @@ function WishlistSection({ wishlist, onRefresh }) {
   );
 }
 
-function ProfileSection({ user }) {
-  return (
-    <>
-      <h1 className="acct-title">Profile Information</h1>
-      <div className="acct-card">
-        <div className="acct-card__title">Personal Details</div>
-        <div style={{ display: "grid", gap: "16px" }}>
-          <div>
-            <label style={{ display: "block", fontSize: "14px", fontWeight: "600", marginBottom: "4px" }}>
-              Display Name
-            </label>
-            <div style={{ padding: "12px", background: "#f8f9fa", borderRadius: "8px", fontSize: "16px" }}>
-              {userName || "Not set"}
-            </div>
-          </div>
-          
-          <div>
-            <label style={{ display: "block", fontSize: "14px", fontWeight: "600", marginBottom: "4px" }}>
-              Email Address
-            </label>
-            <div style={{ padding: "12px", background: "#f8f9fa", borderRadius: "8px", fontSize: "16px" }}>
-              {user?.email}
-            </div>
-          </div>
-          
-          <div>
-            <label style={{ display: "block", fontSize: "14px", fontWeight: "600", marginBottom: "4px" }}>
-              User ID
-            </label>
-            <div style={{ padding: "12px", background: "#f8f9fa", borderRadius: "8px", fontSize: "14px", fontFamily: "monospace", wordBreak: "break-all" }}>
-              {user?.uid}
-            </div>
-          </div>
-          
-          <div>
-            <label style={{ display: "block", fontSize: "14px", fontWeight: "600", marginBottom: "4px" }}>
-              Account Created
-            </label>
-            <div style={{ padding: "12px", background: "#f8f9fa", borderRadius: "8px", fontSize: "16px" }}>
-              {user?.metadata?.creationTime ? new Date(user.metadata.creationTime).toLocaleDateString() : "Unknown"}
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function Addresses() {
+function Addresses({ refreshKey }) {
   const [addresses, setAddresses] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [showForm, setShowForm] = React.useState(false);
@@ -858,26 +895,60 @@ function Addresses() {
     isDefault: false,
   });
 
-  // Load addresses on mount
+  // Load addresses on mount and when refreshKey changes
   React.useEffect(() => {
     (async () => {
       try {
+        console.log('🏠 [Account-Addresses] Loading addresses... (refreshKey:', refreshKey, ')');
+        setLoading(true);
+        
+        // Sync user first
+        console.log('🔄 [Account-Addresses] Syncing user...');
         const token = await auth.currentUser.getIdToken();
+        try {
+          const syncResp = await fetch("http://localhost:5000/api/auth/sync", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              email: auth.currentUser.email,
+              displayName: auth.currentUser.displayName,
+              photoURL: auth.currentUser.photoURL,
+            }),
+          });
+          console.log('✅ [Account-Addresses] User sync response:', syncResp.status);
+        } catch (syncError) {
+          console.warn('⚠️ [Account-Addresses] Sync failed:', syncError);
+        }
+
+        // Fetch addresses
+        console.log('📍 [Account-Addresses] Fetching addresses...');
         const resp = await fetch("http://localhost:5000/api/addresses", {
           headers: { Authorization: `Bearer ${token}` },
         });
+        console.log('📍 [Account-Addresses] API response status:', resp.status);
+        
         if (resp.ok) {
           const data = await resp.json();
-          setAddresses(Array.isArray(data.addresses) ? data.addresses : []);
+          console.log('📍 [Account-Addresses] API response data:', data);
+          const addressList = Array.isArray(data.addresses) ? data.addresses : [];
+          console.log('📍 [Account-Addresses] Setting addresses count:', addressList.length);
+          setAddresses(addressList);
+        } else {
+          const errorText = await resp.text();
+          console.error('❌ [Account-Addresses] API error:', resp.status, errorText);
         }
       } catch (e) {
-        console.error("Failed to load addresses", e);
+        console.error("❌ [Account-Addresses] Failed to load addresses", e);
         toast.error("Unable to load addresses");
       } finally {
         setLoading(false);
+        console.log('✅ [Account-Addresses] Address loading complete');
       }
     })();
-  }, []);
+  }, [refreshKey]);
 
   const refresh = async () => {
     try {

@@ -103,6 +103,42 @@ const orderSchema = new mongoose.Schema({
     paymentGateway: String,
     paidAt: Date,
   },
+  refundDetails: {
+    refundAmount: {
+      type: Number,
+      default: 0,
+    },
+    refundStatus: {
+      type: String,
+      enum: ["not_applicable", "pending", "processing", "completed", "failed"],
+      default: "not_applicable",
+    },
+    refundMethod: {
+      type: String,
+      enum: ["original_payment", "bank_transfer", "wallet", "not_applicable"],
+      default: "not_applicable",
+    },
+    refundInitiatedAt: {
+      type: Date,
+      default: null,
+    },
+    refundCompletedAt: {
+      type: Date,
+      default: null,
+    },
+    refundTransactionId: {
+      type: String,
+      default: null,
+    },
+    refundReason: {
+      type: String,
+      default: "",
+    },
+    refundNotes: {
+      type: String,
+      default: "",
+    },
+  },
   deliveryInfo: {
     agentId: {
       type: String,

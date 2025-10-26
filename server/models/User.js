@@ -49,7 +49,7 @@ const userSchema = new mongoose.Schema(
     provider: {
       type: String,
       default: "password",
-      enum: ['password', 'google', 'facebook', 'twitter']
+      enum: ['password', 'google', 'google.com', 'facebook', 'facebook.com', 'twitter', 'twitter.com', 'phone', 'apple.com']
     },
     role: {
       type: String,
@@ -98,7 +98,7 @@ const userSchema = new mongoose.Schema(
     // Saved delivery addresses
     addresses: [
       {
-        label: { type: String, enum: ['Home', 'Work', 'Other'], default: 'Home' },
+        label: { type: String, default: 'Home' },
         name: { type: String, trim: true },
         phone: { type: String, trim: true },
         address: {

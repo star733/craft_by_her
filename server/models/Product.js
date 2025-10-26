@@ -20,6 +20,10 @@ const productSchema = new mongoose.Schema(
         price: { type: Number, required: true },  // e.g. 50
       },
     ],
+    isActive: {
+      type: Boolean,
+      default: true, // Products are active by default
+    },
   },
   { timestamps: true }
 );

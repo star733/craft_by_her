@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { auth } from "../firebase";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useConfirm } from "../context/ConfirmContext";
 
 export default function Orders() {
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -80,14 +82,19 @@ export default function Orders() {
 
   const handleCancelOrder = async (orderId, order) => {
     const paymentInfo = order.paymentStatus === "paid" 
-      ? "\n\nSince you've already paid, the amount will be refunded to your original payment method within 5-7 business days."
+      ? " Since you've already paid, the amount will be refunded to your original payment method within 5-7 business days."
       : "";
     
     const confirmMessage = `Are you sure you want to cancel this order?${paymentInfo}`;
     
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
+    const confirmed = await confirm({
+      title: 'Cancel Order',
+      message: confirmMessage,
+      type: 'warning',
+      confirmText: 'Cancel Order'
+    });
+    
+    if (!confirmed) return;
 
     try {
       const user = auth.currentUser;
@@ -95,7 +102,13 @@ export default function Orders() {
       
       const response = await fetch(`http://localhost:5000/api/orders/${orderId}/cancel`, {
         method: "PUT",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          cancelReason: "Order cancelled by customer"
+        })
       });
 
       if (response.ok) {
@@ -247,6 +260,80 @@ export default function Orders() {
                   {order.paymentMethod === "cod" ? " Cash on Delivery" : " Online Payment"} • 
                   {getPaymentStatusText(order.paymentStatus)}
                 </div>
+                
+                {/* Refund Information */}
+                {order.refundDetails && order.refundDetails.refundStatus !== "not_applicable" && (
+                  <div style={{
+                    marginTop: "12px",
+                    padding: "12px",
+                    background: order.refundDetails.refundStatus === "completed" ? "#d4edda" : "#fff3cd",
+                    border: `1px solid ${order.refundDetails.refundStatus === "completed" ? "#c3e6cb" : "#ffeeba"}`,
+                    borderRadius: "8px",
+                  }}>
+                    <div style={{ 
+                      display: "flex", 
+                      alignItems: "center", 
+                      gap: "8px",
+                      marginBottom: "8px" 
+                    }}>
+                      <span style={{ fontSize: "18px" }}>
+                        {order.refundDetails.refundStatus === "completed" ? "✅" : "💰"}
+                      </span>
+                      <strong style={{ 
+                        color: order.refundDetails.refundStatus === "completed" ? "#155724" : "#856404",
+                        fontSize: "14px" 
+                      }}>
+                        Refund {order.refundDetails.refundStatus === "pending" ? "Initiated" : 
+                               order.refundDetails.refundStatus === "processing" ? "Processing" : 
+                               order.refundDetails.refundStatus === "completed" ? "Completed" : "Status"}
+                      </strong>
+                    </div>
+                    
+                    <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>
+                      <strong>Amount:</strong> ₹{order.refundDetails.refundAmount}
+                    </div>
+                    
+                    {order.refundDetails.refundMethod !== "not_applicable" && (
+                      <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>
+                        <strong>Method:</strong> {
+                          order.refundDetails.refundMethod === "original_payment" ? "Original Payment Method" :
+                          order.refundDetails.refundMethod === "bank_transfer" ? "Bank Transfer" :
+                          order.refundDetails.refundMethod === "wallet" ? "Wallet" : 
+                          order.refundDetails.refundMethod
+                        }
+                      </div>
+                    )}
+                    
+                    {order.refundDetails.refundInitiatedAt && (
+                      <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>
+                        <strong>Initiated:</strong> {new Date(order.refundDetails.refundInitiatedAt).toLocaleString()}
+                      </div>
+                    )}
+                    
+                    {order.refundDetails.refundCompletedAt && (
+                      <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>
+                        <strong>Completed:</strong> {new Date(order.refundDetails.refundCompletedAt).toLocaleString()}
+                      </div>
+                    )}
+                    
+                    {order.refundDetails.refundTransactionId && (
+                      <div style={{ fontSize: "13px", color: "#666", marginBottom: "4px" }}>
+                        <strong>Transaction ID:</strong> {order.refundDetails.refundTransactionId}
+                      </div>
+                    )}
+                    
+                    {order.refundDetails.refundNotes && (
+                      <div style={{ 
+                        fontSize: "12px", 
+                        color: "#666", 
+                        marginTop: "8px",
+                        fontStyle: "italic"
+                      }}>
+                        {order.refundDetails.refundNotes}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Order Actions */}

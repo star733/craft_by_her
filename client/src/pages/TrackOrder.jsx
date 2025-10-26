@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { auth } from "../firebase";
+import { useConfirm } from "../context/ConfirmContext";
+import { toast } from "react-toastify";
 
 export default function TrackOrder() {
 	const { orderId } = useParams();
 	const navigate = useNavigate();
+	const { confirm } = useConfirm();
 	const [order, setOrder] = useState(null);
 	const [live, setLive] = useState({ connected: false, updates: 0, distanceM: 0, coords: null, delivered: false, outForDelivery: false, etaText: "--", remainingM: 0, simulationRunning: false });
 	const [error, setError] = useState(null);
@@ -910,44 +913,51 @@ export default function TrackOrder() {
 					<p style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#666" }}>
 						Has your order been delivered? Click the button below to confirm delivery.
 					</p>
-					<button
-						onClick={async () => {
-							if (window.confirm("Confirm that your order has been delivered?")) {
-								try {
-									const token = await auth.currentUser.getIdToken();
-									const response = await fetch(`http://localhost:5000/api/orders/${orderId}/delivered`, {
-										method: "PATCH",
-										headers: {
-											"Content-Type": "application/json",
-											Authorization: `Bearer ${token}`
-										}
-									});
-
-									if (response.ok) {
-										const data = await response.json();
-										if (data.success) {
-											// Update local state
-											setOrder(prev => ({ ...prev, orderStatus: "delivered" }));
-											setLive(prev => ({ ...prev, delivered: true, simulationRunning: false }));
-											
-											// Save to localStorage
-											localStorage.setItem(`delivery-status-${orderId}`, JSON.stringify({ delivered: true, timestamp: Date.now() }));
-											
-											// Show success message
-											alert("✅ Order marked as delivered! The delivery boy and admin have been notified.");
-										} else {
-											alert("Failed to mark order as delivered: " + data.error);
-										}
-									} else {
-										const errorData = await response.json();
-										alert("Failed to mark order as delivered: " + errorData.error);
+				<button
+					onClick={async () => {
+						const confirmed = await confirm({
+							title: 'Confirm Delivery',
+							message: 'Confirm that your order has been delivered?',
+							type: 'success',
+							confirmText: 'Confirm'
+						});
+						
+						if (confirmed) {
+							try {
+								const token = await auth.currentUser.getIdToken();
+								const response = await fetch(`http://localhost:5000/api/orders/${orderId}/delivered`, {
+									method: "PATCH",
+									headers: {
+										"Content-Type": "application/json",
+										Authorization: `Bearer ${token}`
 									}
-								} catch (error) {
-									console.error("Error marking order as delivered:", error);
-									alert("Error marking order as delivered. Please try again.");
+								});
+
+								if (response.ok) {
+									const data = await response.json();
+									if (data.success) {
+										// Update local state
+										setOrder(prev => ({ ...prev, orderStatus: "delivered" }));
+										setLive(prev => ({ ...prev, delivered: true, simulationRunning: false }));
+										
+										// Save to localStorage
+										localStorage.setItem(`delivery-status-${orderId}`, JSON.stringify({ delivered: true, timestamp: Date.now() }));
+										
+										// Show success message
+										toast.success("✅ Order marked as delivered! The delivery boy and admin have been notified.");
+									} else {
+										toast.error("Failed to mark order as delivered: " + data.error);
+									}
+								} else {
+									const errorData = await response.json();
+									toast.error("Failed to mark order as delivered: " + errorData.error);
 								}
+							} catch (error) {
+								console.error("Error marking order as delivered:", error);
+								toast.error("Error marking order as delivered. Please try again.");
 							}
-						}}
+						}
+					}}
 						style={{
 							backgroundColor: "#10b981",
 							color: "white",

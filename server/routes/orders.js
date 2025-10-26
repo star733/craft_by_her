@@ -209,6 +209,8 @@ router.put("/:orderId/payment", verify, async (req, res) => {
 // ✅ Cancel order
 router.put("/:orderId/cancel", verify, async (req, res) => {
   try {
+    const { cancelReason } = req.body || {};
+    
     const order = await Order.findOne({ 
       _id: req.params.orderId,
       userId: req.user.uid 
@@ -222,17 +224,47 @@ router.put("/:orderId/cancel", verify, async (req, res) => {
       return res.status(400).json({ error: "Cannot cancel order that is already shipped or delivered" });
     }
     
+    // Cancel the order
     order.orderStatus = "cancelled";
+    
+    // Handle refund if payment was made
     if (order.paymentStatus === "paid") {
       order.paymentStatus = "refunded";
+      
+      // Set refund details - automatically mark as completed
+      order.refundDetails = {
+        refundAmount: order.finalAmount,
+        refundStatus: "completed", // Automatically completed
+        refundMethod: order.paymentMethod === "online" ? "original_payment" : "not_applicable",
+        refundInitiatedAt: new Date(),
+        refundCompletedAt: new Date(), // Mark as completed immediately
+        refundReason: cancelReason || "Order cancelled by customer",
+        refundNotes: "Refund processed automatically. Amount will be credited within 5-7 business days.",
+      };
+      
+      console.log(`💰 Refund completed for order ${order.orderNumber}: ₹${order.finalAmount}`);
+    } else {
+      // COD order or unpaid - no refund needed
+      order.refundDetails = {
+        refundAmount: 0,
+        refundStatus: "not_applicable",
+        refundMethod: "not_applicable",
+        refundReason: cancelReason || "Order cancelled by customer",
+        refundNotes: "No payment was made - no refund required",
+      };
     }
     
     await order.save();
     
+    const message = order.paymentStatus === "refunded"
+      ? "Order cancelled successfully. Refund will be processed within 5-7 business days."
+      : "Order cancelled successfully.";
+    
     res.json({
       success: true,
       order: order,
-      message: "Order cancelled successfully",
+      message: message,
+      refundInfo: order.refundDetails,
     });
   } catch (err) {
     console.error("Error cancelling order:", err);

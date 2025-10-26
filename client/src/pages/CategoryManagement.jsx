@@ -3,8 +3,10 @@ import { auth } from "../firebase";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useNavigate } from "react-router-dom";
+import { useConfirm } from "../context/ConfirmContext";
 
 export default function CategoryManagement() {
+  const { confirm } = useConfirm();
   const [categories, setCategories] = useState([]);
   const [form, setForm] = useState({ name: "", description: "" });
   const [editingId, setEditingId] = useState(null);
@@ -60,7 +62,15 @@ export default function CategoryManagement() {
 
   // Delete category
   const deleteCategory = async (id) => {
-    if (!window.confirm("Delete this category?")) return;
+    const confirmed = await confirm({
+      title: 'Delete Category',
+      message: 'Are you sure you want to delete this category? This action cannot be undone.',
+      type: 'danger',
+      confirmText: 'Delete'
+    });
+    
+    if (!confirmed) return;
+    
     const user = auth.currentUser;
     const token = await user.getIdToken();
     const res = await fetch(`http://localhost:5000/api/admin/categories/${id}`, {

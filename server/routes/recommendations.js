@@ -3,6 +3,40 @@ const router = express.Router();
 const path = require("path");
 const fs = require("fs");
 const Product = require("../models/Product");
+const http = require("http");
+
+// Python ML Service Configuration
+const ML_SERVICE_URL = process.env.ML_SERVICE_URL || 'http://localhost:5001';
+
+// Simple HTTP request helper (replaces fetch)
+const fetchML = (url) => {
+  return new Promise((resolve, reject) => {
+    const request = http.get(url, { timeout: 5000 }, (response) => {
+      let data = '';
+      
+      response.on('data', (chunk) => {
+        data += chunk;
+      });
+      
+      response.on('end', () => {
+        try {
+          resolve({
+            ok: response.statusCode >= 200 && response.statusCode < 300,
+            json: () => Promise.resolve(JSON.parse(data))
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+    });
+    
+    request.on('error', reject);
+    request.on('timeout', () => {
+      request.destroy();
+      reject(new Error('Request timeout'));
+    });
+  });
+};
 
 // Load products data
 const loadProducts = () => {
@@ -86,12 +120,40 @@ function normalizeDbProduct(p) {
   };
 }
 
-// Get recommendations for a product (DB-only)
+// Get recommendations for a product (tries ML service first, falls back to basic)
 router.get("/:productId", async (req, res) => {
   try {
     const { productId } = req.params;
+    const method = req.query.method || 'hybrid'; // content, collaborative, or hybrid
+    const n = parseInt(req.query.n) || 5;
 
-    // Load DB products and normalize (DB-only recommendations)
+    // Try Python ML Service first
+    try {
+      console.log(`🔍 Trying ML service for product ${productId}...`);
+      const mlResponse = await fetchML(
+        `${ML_SERVICE_URL}/recommend/${productId}?method=${method}&n=${n}`
+      );
+
+      if (mlResponse.ok) {
+        const mlData = await mlResponse.json();
+        if (mlData.success && mlData.recommendations) {
+          console.log(`✅ ML service returned ${mlData.recommendations.length} recommendations`);
+          return res.json({
+            ...mlData,
+            source: 'ml-engine',
+            method: mlData.method || method
+          });
+        }
+      }
+      console.log('⚠️ ML service response not OK, falling back to basic...');
+    } catch (mlError) {
+      console.log('⚠️ ML service unavailable, using fallback:', mlError.message);
+    }
+
+    // Fallback to basic JavaScript implementation
+    console.log('📊 Using basic recommendation engine...');
+    
+    // Load DB products and normalize
     const dbProductsRaw = await Product.find({}).lean();
     const dbProducts = dbProductsRaw.map(normalizeDbProduct);
 
@@ -103,7 +165,10 @@ router.get("/:productId", async (req, res) => {
     }
 
     // Prefer candidates from the same category
-    const sameCategory = dbProducts.filter(p => String(p.id) !== String(productId) && (p.category || "").toString().toLowerCase() === (targetProduct.category || "").toString().toLowerCase());
+    const sameCategory = dbProducts.filter(p => 
+      String(p.id) !== String(productId) && 
+      (p.category || "").toString().toLowerCase() === (targetProduct.category || "").toString().toLowerCase()
+    );
     const pool = sameCategory.length >= 3
       ? sameCategory
       : dbProducts.filter(p => String(p.id) !== String(productId));
@@ -112,7 +177,7 @@ router.get("/:productId", async (req, res) => {
     const similarities = pool
       .map(product => ({ product, similarity: calculateSimilarity(targetProduct, product) }))
       .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 5);
+      .slice(0, n);
 
     const recommendations = similarities.map(item => ({
       id: item.product.id,
@@ -130,7 +195,9 @@ router.get("/:productId", async (req, res) => {
       success: true,
       targetProduct: { id: targetProduct.id, name: targetProduct.name, category: targetProduct.category },
       recommendations,
-      total: recommendations.length
+      total: recommendations.length,
+      source: 'basic-engine',
+      method: 'content-based'
     });
   } catch (error) {
     console.error("Error getting recommendations:", error);

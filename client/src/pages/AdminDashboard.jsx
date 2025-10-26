@@ -4,15 +4,19 @@ import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { signOut } from "firebase/auth";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useConfirm } from "../context/ConfirmContext";
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { confirm } = useConfirm();
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({
     activeOrders: 0,
     totalRevenue: 0,
+    grossRevenue: 0,
+    deliveryCommission: 0,
     newThisWeek: 0
   });
   const [form, setForm] = useState({
@@ -159,26 +163,34 @@ export default function AdminDashboard() {
       !['delivered', 'cancelled', 'rejected', 'failed'].includes(order.orderStatus)
     ).length;
     
-    // Total revenue from delivered orders
-    const deliveredOrders = ordersData.filter(order => order.orderStatus === 'delivered');
-    console.log('=== REVENUE CALCULATION ===');
-    console.log('Delivered orders count:', deliveredOrders.length);
-    console.log('Delivered orders:', deliveredOrders.map(o => ({ 
-      id: o._id, 
-      status: o.orderStatus, 
-      finalAmount: o.finalAmount, 
-      totalAmount: o.totalAmount 
-    })));
+    console.log('=== REVENUE CALCULATION (CASH FLOW LOGIC) ===');
     
-    const totalRevenue = deliveredOrders.reduce((sum, order) => {
-      // Prefer finalAmount, then total, then totalAmount; coerce to number
+    // Step 1: Calculate revenue from PAID orders (money received from customers)
+    const paidOrders = ordersData.filter(order => 
+      order.paymentStatus === 'paid' && order.orderStatus !== 'cancelled'
+    );
+    
+    const grossRevenue = paidOrders.reduce((sum, order) => {
       const amountRaw = (order.finalAmount ?? order.total ?? order.totalAmount ?? 0);
       const amount = Number(amountRaw) || 0;
-      console.log(`Order ${order._id}: finalAmount=${order.finalAmount}, totalAmount=${order.totalAmount}, using=${amount}`);
       return sum + amount;
     }, 0);
     
-    console.log('Total calculated revenue:', totalRevenue);
+    console.log('📥 MONEY IN: Paid orders count:', paidOrders.length);
+    console.log('📥 MONEY IN: Gross revenue (from paid orders):', grossRevenue);
+    
+    // Step 2: Calculate delivery commission from DELIVERED orders (money paid to delivery boys)
+    const deliveredOrders = ordersData.filter(order => order.orderStatus === 'delivered');
+    const deliveryCommission = deliveredOrders.length * 50;
+    
+    console.log('📤 MONEY OUT: Delivered orders count:', deliveredOrders.length);
+    console.log('📤 MONEY OUT: Delivery commission (₹50 × ' + deliveredOrders.length + '):', deliveryCommission);
+    
+    // Step 3: Net revenue = Money received - Money paid to delivery boys
+    const netRevenue = grossRevenue - deliveryCommission;
+    
+    console.log('💰 NET REVENUE:', netRevenue);
+    console.log('Formula: ₹' + grossRevenue + ' (paid) - ₹' + deliveryCommission + ' (delivery commission) = ₹' + netRevenue);
     
     // New orders this week
     const newThisWeek = ordersData.filter(order => {
@@ -188,7 +200,9 @@ export default function AdminDashboard() {
     
     return {
       activeOrders,
-      totalRevenue,
+      totalRevenue: netRevenue, // Admin's net revenue after delivery commission
+      grossRevenue: grossRevenue, // Total from paid orders (money received)
+      deliveryCommission: deliveryCommission, // Total paid to delivery boys
       newThisWeek
     };
   };
@@ -221,7 +235,7 @@ export default function AdminDashboard() {
     } catch (err) {
       console.error("Fetch orders error:", err);
       setOrders([]);
-      setStats({ activeOrders: 0, totalRevenue: 0, newThisWeek: 0 });
+      setStats({ activeOrders: 0, totalRevenue: 0, grossRevenue: 0, deliveryCommission: 0, newThisWeek: 0 });
     }
   };
 
@@ -268,9 +282,11 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    const unsub = auth.onAuthStateChanged((user) => {
+    const unsub = auth.onAuthStateChanged(async (user) => {
       if (user) {
-        fetchProducts(user);
+        // Fetch both products and orders on initial load
+        await fetchProducts(user);
+        await fetchOrders(user); // This will populate the stats
       }
     });
     return () => unsub();
@@ -383,22 +399,58 @@ export default function AdminDashboard() {
     }
   };
 
-  // ✅ Delete Product
-  const deleteProduct = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this product?")) return;
+  // ✅ Toggle Product Status (Disable/Enable)
+  const toggleProductStatus = async (id, isCurrentlyActive) => {
+    const action = isCurrentlyActive ? "disable" : "enable";
+    
+    const confirmed = await confirm({
+      title: `${action === 'disable' ? 'Disable' : 'Enable'} Product`,
+      message: `Are you sure you want to ${action} this product? ${action === 'disable' ? 'It will be hidden from customers.' : 'It will be visible to customers again.'}`,
+      type: action === 'disable' ? 'warning' : 'success',
+      confirmText: action === 'disable' ? 'Disable' : 'Enable'
+    });
+    
+    if (!confirmed) return;
+    
     try {
-      const token = await auth.currentUser.getIdToken();
-      const res = await fetch(`http://localhost:5000/api/admin/products/${id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
+      console.log("🔄 Toggling product:", id, "Currently active:", isCurrentlyActive);
+      
+      // Force refresh token to ensure it's valid
+      const token = await auth.currentUser.getIdToken(true);
+      
+      const res = await fetch(`http://localhost:5000/api/admin/products/toggle-status/${id}`, {
+        method: "PATCH",
+        headers: { 
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
       });
+      
+      console.log("Response status:", res.status);
+      
+      if (res.status === 401) {
+        toast.error("Your session expired. Please logout and login again.");
+        return;
+      }
+      
       if (res.ok) {
-        toast.success("Product deleted!");
-        fetchProducts(auth.currentUser);
-      } else toast.error("Failed to delete product");
+        const data = await res.json();
+        console.log("✅ Success:", data);
+        toast.success(data.message);
+        await fetchProducts(auth.currentUser);
+      } else {
+        const errorText = await res.text();
+        console.error("❌ Error response:", errorText);
+        toast.error(`Failed to ${action} product`);
+      }
     } catch (err) {
-      console.error("Delete error:", err);
-      toast.error("Failed to delete product");
+      console.error("❌ Toggle status error:", err);
+      
+      if (err.message && err.message.includes('network')) {
+        toast.error("Network error. Please check your internet connection.");
+      } else {
+        toast.error("Failed to update product status. Please try again.");
+      }
     }
   };
 
@@ -534,10 +586,15 @@ export default function AdminDashboard() {
   };
 
   const deleteDeliveryAgent = async (agentId) => {
-    if (!window.confirm("Are you sure you want to delete this delivery agent?")) {
-      return;
-    }
-
+    const confirmed = await confirm({
+      title: 'Delete Delivery Agent',
+      message: 'Are you sure you want to delete this delivery agent? This action cannot be undone.',
+      type: 'danger',
+      confirmText: 'Delete'
+    });
+    
+    if (!confirmed) return;
+    
     try {
       const user = auth.currentUser;
       const token = await user.getIdToken();
@@ -698,16 +755,28 @@ export default function AdminDashboard() {
 
             {/* Top Stats */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "20px", marginBottom: "30px" }}>
-              <div style={statCard}>Total Products <h3>{products.length}</h3></div>
-              <div style={statCard}>Active Orders <h3>{stats.activeOrders}</h3></div>
-              <div style={statCard}>
-                Revenue 
-                <h3>₹{stats.totalRevenue.toLocaleString()}</h3>
-                <small style={{color: '#666', fontSize: '12px'}}>
-                  From {orders.filter(o => o.orderStatus === 'delivered').length} delivered orders
+              <div style={{...statCard, borderLeft: "4px solid #5c4033"}}>
+                <div style={{fontSize: "13px", color: "#666", marginBottom: "8px"}}>📦 Total Products</div>
+                <h3 style={{fontSize: "32px", margin: "0", color: "#5c4033"}}>{products.length}</h3>
+                <small style={{color: '#999', fontSize: '12px'}}>In inventory</small>
+              </div>
+              <div style={{...statCard, borderLeft: "4px solid #FF6B6B"}}>
+                <div style={{fontSize: "13px", color: "#666", marginBottom: "8px"}}>🚀 Active Orders</div>
+                <h3 style={{fontSize: "32px", margin: "0", color: "#FF6B6B"}}>{stats.activeOrders}</h3>
+                <small style={{color: '#999', fontSize: '12px'}}>Currently processing</small>
+              </div>
+              <div style={{...statCard, borderLeft: "4px solid #4ECDC4"}}>
+                <div style={{fontSize: "13px", color: "#666", marginBottom: "8px"}}>💰 Net Revenue (Cash Flow)</div>
+                <h3 style={{fontSize: "32px", margin: "0", color: "#4ECDC4"}}>₹{stats.totalRevenue.toLocaleString('en-IN')}</h3>
+                <small style={{color: '#999', fontSize: '11px', display: 'block', marginTop: '4px'}}>
+                  📥 Paid: ₹{stats.grossRevenue.toLocaleString('en-IN')} - 📤 Delivered: ₹{stats.deliveryCommission.toLocaleString('en-IN')}
                 </small>
               </div>
-              <div style={statCard}>New This Week <h3>{stats.newThisWeek}</h3></div>
+              <div style={{...statCard, borderLeft: "4px solid #95E1D3"}}>
+                <div style={{fontSize: "13px", color: "#666", marginBottom: "8px"}}>🆕 New This Week</div>
+                <h3 style={{fontSize: "32px", margin: "0", color: "#95E1D3"}}>{stats.newThisWeek}</h3>
+                <small style={{color: '#999', fontSize: '12px'}}>Last 7 days</small>
+              </div>
             </div>
 
             {/* System Controls + Quick Stats */}
@@ -724,10 +793,50 @@ export default function AdminDashboard() {
               </div>
 
               <div style={{ background: "#fff", padding: "20px", borderRadius: "12px" }}>
-                <h2>Quick Stats</h2>
-                <p>Orders This Week: <b>5</b></p>
-                <p>Goals Completed: <b>8</b></p>
-                <p>System Uptime: <b style={{ color: "green" }}>99.9%</b></p>
+                <h2 style={{ marginBottom: "20px", fontSize: "18px", color: "#5c4033" }}>Quick Stats</h2>
+                <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", background: "#f8f9fa", borderRadius: "8px" }}>
+                    <span style={{ fontSize: "14px", color: "#666" }}>📋 Orders This Week</span>
+                    <b style={{ fontSize: "20px", color: "#5c4033" }}>{stats.newThisWeek}</b>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", background: "#f8f9fa", borderRadius: "8px" }}>
+                    <span style={{ fontSize: "14px", color: "#666" }}>✅ Delivered Orders</span>
+                    <b style={{ fontSize: "20px", color: "#28a745" }}>{orders.filter(o => o.orderStatus === 'delivered').length}</b>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px", background: "#f8f9fa", borderRadius: "8px" }}>
+                    <span style={{ fontSize: "14px", color: "#666" }}>🔄 Pending Orders</span>
+                    <b style={{ fontSize: "20px", color: "#ffc107" }}>{orders.filter(o => ['pending', 'confirmed'].includes(o.orderStatus)).length}</b>
+                  </div>
+                  
+                  {/* Revenue Breakdown */}
+                  <div style={{ marginTop: "10px", padding: "12px", background: "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)", borderRadius: "8px" }}>
+                    <h3 style={{ fontSize: "13px", color: "#5c4033", marginBottom: "10px", fontWeight: "700" }}>💰 Revenue Breakdown (Cash Flow)</h3>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
+                        <span style={{ color: "#666" }}>📥 Money Received (Paid Orders):</span>
+                        <b style={{ color: "#28a745" }}>₹{stats.grossRevenue.toLocaleString('en-IN')}</b>
+                      </div>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "13px" }}>
+                        <span style={{ color: "#666" }}>📤 Delivery Commission (Delivered):</span>
+                        <b style={{ color: "#dc3545" }}>-₹{stats.deliveryCommission.toLocaleString('en-IN')}</b>
+                      </div>
+                      <div style={{ 
+                        borderTop: "2px dashed #999", 
+                        paddingTop: "8px", 
+                        marginTop: "4px",
+                        display: "flex", 
+                        justifyContent: "space-between",
+                        fontSize: "14px"
+                      }}>
+                        <span style={{ color: "#5c4033", fontWeight: "700" }}>Net Revenue:</span>
+                        <b style={{ color: "#4ECDC4", fontSize: "16px" }}>₹{stats.totalRevenue.toLocaleString('en-IN')}</b>
+                      </div>
+                      <small style={{ color: "#666", fontSize: "11px", marginTop: "4px" }}>
+                        ₹50 per delivery × {orders.filter(o => o.orderStatus === 'delivered').length} deliveries
+                      </small>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </>
@@ -975,7 +1084,32 @@ export default function AdminDashboard() {
                   products
                     .filter((p) => selectedCategory === "All" || p.category === selectedCategory)
                     .map((p) => (
-                    <div key={p._id} style={{ background: "#fff", padding: "16px", borderRadius: "8px", textAlign: "center" }}>
+                    <div key={p._id} style={{ 
+                      background: "#fff", 
+                      padding: "16px", 
+                      borderRadius: "8px", 
+                      textAlign: "center",
+                      opacity: p.isActive === false ? 0.6 : 1,
+                      border: p.isActive === false ? "2px solid #dc3545" : "1px solid #eee",
+                      position: "relative"
+                    }}>
+                      {/* Disabled Badge */}
+                      {p.isActive === false && (
+                        <div style={{
+                          position: "absolute",
+                          top: "8px",
+                          right: "8px",
+                          background: "#dc3545",
+                          color: "white",
+                          padding: "4px 8px",
+                          borderRadius: "4px",
+                          fontSize: "10px",
+                          fontWeight: "bold"
+                        }}>
+                          DISABLED
+                        </div>
+                      )}
+                      
                       {p.image ? (
   // For new products uploaded via multer
   <img
@@ -1019,9 +1153,19 @@ export default function AdminDashboard() {
                           ))}
                         </div>
                       )}
+                      
                       <div style={{ marginTop: "10px", display: "flex", gap: "10px", justifyContent: "center" }}>
                         <button onClick={() => startEdit(p)} style={{ ...buttonPrimary, background: "#543737" }}>Edit</button>
-                        <button onClick={() => deleteProduct(p._id)} style={{ ...buttonPrimary, background: "#543737" }}>Delete</button>
+                        <button 
+                          onClick={() => toggleProductStatus(p._id, p.isActive !== false)} 
+                          style={{ 
+                            ...buttonPrimary, 
+                            background: p.isActive === false ? "#28a745" : "#ffc107",
+                            color: p.isActive === false ? "#fff" : "#000"
+                          }}
+                        >
+                          {p.isActive === false ? "Enable" : "Disable"}
+                        </button>
                       </div>
                     </div>
                   ))
@@ -1047,6 +1191,7 @@ export default function AdminDashboard() {
                       <th style={{ padding: "14px", textAlign: "left", fontSize: "13px", letterSpacing: ".02em", color: "#6b4f3a" }}>Customer</th>
                       <th style={{ padding: "14px", textAlign: "left", fontSize: "13px", letterSpacing: ".02em", color: "#6b4f3a" }}>Total</th>
                       <th style={{ padding: "14px", textAlign: "left", fontSize: "13px", letterSpacing: ".02em", color: "#6b4f3a" }}>Status</th>
+                      <th style={{ padding: "14px", textAlign: "left", fontSize: "13px", letterSpacing: ".02em", color: "#6b4f3a" }}>Payment/Refund</th>
                       <th style={{ padding: "14px", textAlign: "left", fontSize: "13px", letterSpacing: ".02em", color: "#6b4f3a" }}>Date</th>
                       <th style={{ padding: "14px", textAlign: "left", fontSize: "13px", letterSpacing: ".02em", color: "#6b4f3a" }}>Delivery Agent</th>
                       <th style={{ padding: "14px", textAlign: "left", fontSize: "13px", letterSpacing: ".02em", color: "#6b4f3a" }}>Actions</th>
@@ -1096,6 +1241,41 @@ export default function AdminDashboard() {
                               }}>
                                 {orderStatus}
                               </span>
+                            </td>
+                            {/* Payment/Refund Column */}
+                            <td style={{ padding: "14px" }}>
+                              {order.paymentStatus === "refunded" && order.refundDetails ? (
+                                <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                                  <span style={{
+                                    padding: "4px 8px",
+                                    borderRadius: "6px",
+                                    fontSize: "11px",
+                                    backgroundColor: order.refundDetails.refundStatus === "completed" ? "#d4edda" : 
+                                                     order.refundDetails.refundStatus === "pending" ? "#fff3cd" : "#d1ecf1",
+                                    color: order.refundDetails.refundStatus === "completed" ? "#155724" : 
+                                           order.refundDetails.refundStatus === "pending" ? "#856404" : "#0c5460",
+                                    fontWeight: 600
+                                  }}>
+                                    {order.refundDetails.refundStatus === "completed" ? "✅ Refunded" :
+                                     order.refundDetails.refundStatus === "pending" ? "⏳ Pending" :
+                                     "🔄 Processing"}
+                                  </span>
+                                  <span style={{ fontSize: "10px", color: "#666" }}>
+                                    ₹{order.refundDetails.refundAmount}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span style={{
+                                  padding: "4px 8px",
+                                  borderRadius: "6px",
+                                  fontSize: "11px",
+                                  backgroundColor: order.paymentStatus === "paid" ? "#d4edda" : "#fff7e6",
+                                  color: order.paymentStatus === "paid" ? "#155724" : "#856404",
+                                  fontWeight: 600
+                                }}>
+                                  {order.paymentStatus === "paid" ? "💳 Paid" : "💰 COD"}
+                                </span>
+                              )}
                             </td>
                             <td style={{ padding: "14px", color: "#6f5b4a" }}>{createdDate}</td>
                             <td style={{ padding: "14px" }}>

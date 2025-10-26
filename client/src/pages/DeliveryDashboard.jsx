@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
+import { useConfirm } from "../context/ConfirmContext";
 
 export default function DeliveryDashboard() {
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
   const [agent, setAgent] = useState(null);
   const [orders, setOrders] = useState([]);
   const [stats, setStats] = useState({
@@ -735,11 +737,14 @@ export default function DeliveryDashboard() {
                   e.currentTarget.style.boxShadow = "0 1px 3px rgba(0, 0, 0, 0.08)";
                 }}
               >
-                <div style={{ fontSize: "28px", marginBottom: "12px", opacity: 0.8 }}>📅</div>
-                <h3 style={{ margin: "0 0 8px 0", color: "#999", fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>This Month</h3>
-                <p style={{ margin: 0, fontSize: "26px", fontWeight: "700", color: "#6366f1" }}>
+                <div style={{ fontSize: "28px", marginBottom: "12px", opacity: 0.8 }}>💵</div>
+                <h3 style={{ margin: "0 0 8px 0", color: "#999", fontSize: "11px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "0.5px" }}>💰 This Month Revenue</h3>
+                <p style={{ margin: "0 0 4px 0", fontSize: "26px", fontWeight: "700", color: "#6366f1" }}>
                   ₹{stats.monthlyEarnings}
                 </p>
+                <small style={{ fontSize: "11px", color: "#999" }}>
+                  {Math.floor(stats.monthlyEarnings / 50)} deliveries × ₹50
+                </small>
               </div>
             </div>
 
@@ -1128,8 +1133,15 @@ export default function DeliveryDashboard() {
                             {/* Accept for assigned orders */}
                             {order.orderStatus === "assigned" && (
                               <button
-                                onClick={() => {
-                                  if (window.confirm("Accept this delivery assignment?")) {
+                                onClick={async () => {
+                                  const confirmed = await confirm({
+                                    title: 'Accept Delivery',
+                                    message: 'Accept this delivery assignment?',
+                                    type: 'success',
+                                    confirmText: 'Accept'
+                                  });
+                                  
+                                  if (confirmed) {
                                     acceptRejectOrder(order._id, "accept");
                                   }
                                 }}
@@ -1260,22 +1272,34 @@ export default function DeliveryDashboard() {
             {/* Earnings Summary */}
             <div style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
               gap: "20px",
               marginBottom: "30px"
             }}>
+              {/* Total Revenue Box - Most Prominent */}
               <div style={{
-                backgroundColor: "#fff",
-                padding: "20px",
-                borderRadius: "12px",
-                boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-                textAlign: "center"
+                background: "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)",
+                padding: "30px",
+                borderRadius: "16px",
+                boxShadow: "0 8px 24px rgba(17, 153, 142, 0.3)",
+                textAlign: "center",
+                gridColumn: "span 2"
               }}>
-                <div style={{ fontSize: "24px", marginBottom: "8px" }}>💰</div>
-                <h3 style={{ margin: "0 0 5px 0", color: "#5c4033" }}>Total Earnings</h3>
-                <p style={{ margin: 0, fontSize: "20px", fontWeight: "bold", color: "#28a745" }}>
+                <div style={{ fontSize: "48px", marginBottom: "10px" }}>💰</div>
+                <h3 style={{ margin: "0 0 10px 0", color: "#fff", fontSize: "14px", fontWeight: "600", textTransform: "uppercase", letterSpacing: "1px" }}>Total Revenue Earned</h3>
+                <p style={{ margin: "0 0 10px 0", fontSize: "42px", fontWeight: "bold", color: "#fff" }}>
                   ₹{stats.totalEarnings}
                 </p>
+                <div style={{
+                  backgroundColor: "rgba(255, 255, 255, 0.2)",
+                  padding: "10px 20px",
+                  borderRadius: "20px",
+                  display: "inline-block"
+                }}>
+                  <p style={{ margin: 0, fontSize: "16px", color: "#fff", fontWeight: "600" }}>
+                    ₹50 per delivery × {stats.totalDeliveries} deliveries
+                  </p>
+                </div>
               </div>
               
               <div style={{
@@ -1283,12 +1307,16 @@ export default function DeliveryDashboard() {
                 padding: "20px",
                 borderRadius: "12px",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                border: "2px solid #007bff",
                 textAlign: "center"
               }}>
                 <div style={{ fontSize: "24px", marginBottom: "8px" }}>📅</div>
                 <h3 style={{ margin: "0 0 5px 0", color: "#5c4033" }}>This Month</h3>
-                <p style={{ margin: 0, fontSize: "20px", fontWeight: "bold", color: "#007bff" }}>
+                <p style={{ margin: "0 0 5px 0", fontSize: "24px", fontWeight: "bold", color: "#007bff" }}>
                   ₹{stats.monthlyEarnings}
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "#666" }}>
+                  {Math.floor(stats.monthlyEarnings / 50)} deliveries
                 </p>
               </div>
               
@@ -1297,12 +1325,16 @@ export default function DeliveryDashboard() {
                 padding: "20px",
                 borderRadius: "12px",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                border: "2px solid #28a745",
                 textAlign: "center"
               }}>
                 <div style={{ fontSize: "24px", marginBottom: "8px" }}>📦</div>
                 <h3 style={{ margin: "0 0 5px 0", color: "#5c4033" }}>Completed Orders</h3>
-                <p style={{ margin: 0, fontSize: "20px", fontWeight: "bold", color: "#6c757d" }}>
+                <p style={{ margin: "0 0 5px 0", fontSize: "24px", fontWeight: "bold", color: "#28a745" }}>
                   {stats.totalDeliveries}
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "#666" }}>
+                  All-time deliveries
                 </p>
               </div>
               
@@ -1311,12 +1343,37 @@ export default function DeliveryDashboard() {
                 padding: "20px",
                 borderRadius: "12px",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
+                border: "2px solid #ffc107",
                 textAlign: "center"
               }}>
                 <div style={{ fontSize: "24px", marginBottom: "8px" }}>⭐</div>
                 <h3 style={{ margin: "0 0 5px 0", color: "#5c4033" }}>Average Rating</h3>
-                <p style={{ margin: 0, fontSize: "20px", fontWeight: "bold", color: "#ffc107" }}>
-                  {stats.rating ? stats.rating.toFixed(1) : "0.0"}/5.0
+                <p style={{ margin: "0 0 5px 0", fontSize: "24px", fontWeight: "bold", color: "#ffc107" }}>
+                  {stats.rating ? stats.rating.toFixed(1) : "0.0"}/5
+                </p>
+                <p style={{ margin: 0, fontSize: "13px", color: "#666" }}>
+                  Customer feedback
+                </p>
+              </div>
+            </div>
+
+            {/* Earning Rate Info Box */}
+            <div style={{
+              background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+              padding: "20px",
+              borderRadius: "12px",
+              marginBottom: "30px",
+              color: "white",
+              display: "flex",
+              alignItems: "center",
+              gap: "15px",
+              boxShadow: "0 4px 12px rgba(102, 126, 234, 0.3)"
+            }}>
+              <div style={{ fontSize: "40px" }}>💵</div>
+              <div style={{ flex: 1 }}>
+                <h3 style={{ margin: "0 0 8px 0", fontSize: "18px", fontWeight: "700" }}>Earning Rate</h3>
+                <p style={{ margin: 0, fontSize: "14px", opacity: 0.95 }}>
+                  You earn <strong>₹50</strong> for every successful delivery. Complete more orders to increase your monthly revenue!
                 </p>
               </div>
             </div>
@@ -1342,37 +1399,60 @@ export default function DeliveryDashboard() {
                 <div style={{ display: "flex", flexDirection: "column", gap: "15px" }}>
                   {orders.filter(order => order.orderStatus === "delivered").map((order) => (
                     <div key={order._id} style={{
-                      border: "1px solid #e9ecef",
-                      borderRadius: "8px",
-                      padding: "15px",
-                      backgroundColor: "#f8f9fa"
+                      border: "2px solid #e9ecef",
+                      borderRadius: "12px",
+                      padding: "18px",
+                      backgroundColor: "#fff",
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.05)"
                     }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div>
-                          <h4 style={{ margin: "0 0 5px 0", color: "#5c4033" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+                        <div style={{ flex: 1 }}>
+                          <h4 style={{ margin: "0 0 5px 0", color: "#5c4033", fontSize: "16px", fontWeight: "700" }}>
                             Order #{order.orderNumber}
                           </h4>
                           <p style={{ margin: "0 0 3px 0", fontSize: "14px", color: "#666" }}>
-                            Customer: {order.buyerDetails?.name}
+                            👤 Customer: {order.buyerDetails?.name}
                           </p>
-                          <p style={{ margin: "0", fontSize: "14px", color: "#666" }}>
-                            Delivered: {order.deliveryInfo?.deliveredAt ? new Date(order.deliveryInfo.deliveredAt).toLocaleDateString() : "N/A"}
+                          <p style={{ margin: "0", fontSize: "13px", color: "#666" }}>
+                            📅 Delivered: {order.deliveryInfo?.deliveredAt ? new Date(order.deliveryInfo.deliveredAt).toLocaleDateString() + " at " + new Date(order.deliveryInfo.deliveredAt).toLocaleTimeString() : "N/A"}
                           </p>
                         </div>
                         <div style={{ textAlign: "right" }}>
-                          <p style={{ margin: "0 0 5px 0", fontSize: "16px", fontWeight: "600", color: "#28a745" }}>
-                            ₹{order.finalAmount}
-                          </p>
-                          <span style={{
-                            padding: "4px 8px",
-                            borderRadius: "12px",
-                            fontSize: "12px",
-                            backgroundColor: "#d4edda",
-                            color: "#155724"
+                          <div style={{
+                            padding: "10px 20px",
+                            borderRadius: "10px",
+                            backgroundColor: "#28a745",
+                            marginBottom: "8px"
                           }}>
-                            DELIVERED
+                            <p style={{ margin: "0", fontSize: "24px", fontWeight: "bold", color: "#fff" }}>
+                              +₹50
+                            </p>
+                            <p style={{ margin: "0", fontSize: "11px", color: "#fff", opacity: 0.9 }}>
+                              Your earning
+                            </p>
+                          </div>
+                          <span style={{
+                            padding: "5px 12px",
+                            borderRadius: "16px",
+                            fontSize: "11px",
+                            fontWeight: "600",
+                            backgroundColor: "#d4edda",
+                            color: "#155724",
+                            display: "inline-block"
+                          }}>
+                            ✓ DELIVERED
                           </span>
                         </div>
+                      </div>
+                      <div style={{
+                        paddingTop: "12px",
+                        borderTop: "1px dashed #e9ecef",
+                        color: "#666",
+                        fontSize: "13px"
+                      }}>
+                        <p style={{ margin: "0" }}>
+                          <strong>Order Value:</strong> ₹{order.finalAmount} • <strong>Delivery Fee:</strong> ₹50 (You earned)
+                        </p>
                       </div>
                     </div>
                   ))}

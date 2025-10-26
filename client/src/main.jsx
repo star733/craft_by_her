@@ -8,12 +8,15 @@ import './index.css';
 
 // If you truly use AuthContext, keep it. Otherwise remove the import + wrapper.
 import { AuthProvider } from "./context/AuthContext"; // <- remove if you don't have it
+import { ConfirmProvider } from "./context/ConfirmContext";
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider>   {/* remove this line and the closing one if you don't use it */}
-        <App />
+        <ConfirmProvider>
+          <App />
+        </ConfirmProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>

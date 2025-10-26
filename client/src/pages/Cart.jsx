@@ -3,9 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { auth } from "../firebase";
 import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
+import { useConfirm } from "../context/ConfirmContext";
 
 export default function Cart() {
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
   const [cart, setCart] = useState({ items: [], totalAmount: 0 });
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState(false);
@@ -106,7 +108,14 @@ export default function Cart() {
   };
 
   const clearCart = async () => {
-    if (!window.confirm("Are you sure you want to clear your cart?")) return;
+    const confirmed = await confirm({
+      title: 'Clear Cart',
+      message: 'Are you sure you want to clear your cart? All items will be removed.',
+      type: 'warning',
+      confirmText: 'Clear Cart'
+    });
+    
+    if (!confirmed) return;
 
     try {
       setUpdating(true);

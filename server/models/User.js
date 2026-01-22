@@ -23,8 +23,7 @@ const userSchema = new mongoose.Schema(
     uid: {
       type: String,
       required: true,
-      unique: true,
-      index: true
+      unique: true
     },
     email: {
       type: String,
@@ -54,8 +53,7 @@ const userSchema = new mongoose.Schema(
     role: {
       type: String,
       default: "user",
-      enum: ["user", "admin"],
-      index: true
+      enum: ["user", "admin", "seller"]
     },
     isActive: {
       type: Boolean,
@@ -115,7 +113,22 @@ const userSchema = new mongoose.Schema(
     ],
     activities: [userActivitySchema],
     registrationIP: String,
-    registrationUserAgent: String
+    registrationUserAgent: String,
+    // Seller location information (for sellers only)
+    sellerLocation: {
+      address: {
+        street: { type: String, trim: true },
+        city: { type: String, trim: true },
+        state: { type: String, trim: true },
+        pincode: { type: String, trim: true },
+        country: { type: String, default: 'India', trim: true }
+      },
+      coordinates: {
+        latitude: { type: Number },
+        longitude: { type: Number }
+      },
+      district: { type: String, trim: true }
+    }
   },
   {
     timestamps: true
@@ -123,7 +136,6 @@ const userSchema = new mongoose.Schema(
 );
 
 // Indexes for better performance
-userSchema.index({ email: 1 });
 userSchema.index({ role: 1 });
 userSchema.index({ isActive: 1 });
 userSchema.index({ lastLogin: -1 });

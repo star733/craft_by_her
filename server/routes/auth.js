@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const verify = require("../middleware/verifyFirebaseToken");
 const User = require("../models/User");
+const { sendSellerApprovalNotification } = require("../utils/sellerEmailService");
 
 // ✅ Whitelist for admin users
 const ADMIN_EMAILS = ["admin1@gmail.com"];
@@ -39,11 +40,69 @@ router.post("/sync", verify, async (req, res) => {
   try {
     const { uid, email, name, picture, firebase } = req.user;
     const provider = firebase?.sign_in_provider;
+    const { role: clientRole } = req.body; // Get role from client
 
     // ✅ Decide role
-    const role = ADMIN_EMAILS.includes((email || "").toLowerCase())
-      ? "admin"
-      : "user";
+    let role = "user"; // Default role
+
+    if (ADMIN_EMAILS.includes((email || "").toLowerCase())) {
+      role = "admin";
+    } else if (clientRole === "seller") {
+      // Check if seller has approved application
+      const SellerApplication = require("../models/SellerApplication");
+      const application = await SellerApplication.findOne({ userId: uid });
+      
+      // If seller has pending/rejected application, block login completely
+      if (application && application.status !== 'approved') {
+        console.log(`🚫 SELLER LOGIN BLOCKED - User ${uid} application status: ${application.status}`);
+        return res.status(403).json({
+          ok: false,
+          error: "SELLER_NOT_APPROVED",
+          message: application.status === 'rejected' 
+            ? "Your seller application has been rejected. Please contact support."
+            : "Your seller application is pending admin approval. You will receive an email when approved.",
+          applicationStatus: application.status
+        });
+      }
+      
+      // ONLY set role to seller if application is approved
+      if (application && application.status === 'approved') {
+        role = "seller";
+        console.log(`✅ SELLER LOGIN ALLOWED - User ${uid} is approved`);
+      } else {
+        // No application found - keep as regular user
+        role = "user";
+        console.log(`User ${uid} registered as seller but no application found - keeping role as 'user'`);
+      }
+    } else {
+      // For buyers or unspecified roles, check if they are approved sellers
+      const SellerApplication = require("../models/SellerApplication");
+      const application = await SellerApplication.findOne({ userId: uid });
+      
+      // If they have a pending/rejected seller application, block login
+      if (application && application.status !== 'approved') {
+        console.log(`🚫 LOGIN BLOCKED - User ${uid} has ${application.status} seller application`);
+        return res.status(403).json({
+          ok: false,
+          error: "SELLER_NOT_APPROVED",
+          message: application.status === 'rejected'
+            ? "Your seller application has been rejected. Please contact support."
+            : "Your seller application is pending admin approval. You will receive an email when approved.",
+          applicationStatus: application.status
+        });
+      }
+      
+      if (application && application.status === 'approved') {
+        role = "seller";
+      } else {
+        // Check legacy seller management
+        const sellerManagement = require("./sellerManagement");
+        const sellerEmails = await sellerManagement.getSellerEmails();
+        if (sellerEmails.includes((email || "").toLowerCase())) {
+          role = "seller";
+        }
+      }
+    }
 
     // Clean the display name before storing
     const rawName = name || req.body.displayName || req.body.name || null;
@@ -108,6 +167,20 @@ router.get("/me", verify, async (req, res) => {
       // user not found in DB yet
       return res.status(404).json({ ok: false, message: "User not found. Please sync first." });
     }
+    
+    // ✅ For sellers, check if they have an approved application
+    if (me.role === "seller") {
+      const SellerApplication = require("../models/SellerApplication");
+      const application = await SellerApplication.findOne({ userId: req.user.uid });
+      
+      // ONLY allow access if application is approved
+      if (!application || application.status !== 'approved') {
+        // Change role to user if application is not approved
+        me.role = "user";
+        console.log(`User ${req.user.uid} has seller role but application status is: ${application?.status || 'not found'} - changing role to 'user'`);
+      }
+    }
+    
     res.json({ ok: true, user: me });
   } catch (e) {
     console.error("[ME ERROR]", e);

@@ -222,7 +222,7 @@ export default function DeliveryDashboard() {
     }
   };
 
-  // Use default location (Koovappally hub)
+  // Use default location
   const useDefaultLocation = async () => {
     const defaultCoords = {
       latitude: 9.5341,
@@ -241,7 +241,7 @@ export default function DeliveryDashboard() {
         const data = await res.json();
         if (data.success) {
           setLocation(defaultCoords);
-          toast.success("✅ Using default hub location (Koovappally)");
+          toast.success("✅ Using default location");
           
           const mapUrl = `https://www.google.com/maps?q=${defaultCoords.latitude},${defaultCoords.longitude}`;
           window.open(mapUrl, "_blank");
@@ -352,7 +352,7 @@ export default function DeliveryDashboard() {
         
         if (error.code === error.PERMISSION_DENIED) {
           setLocationPermissionDenied(true); // Mark permission as denied
-          toast.info("Please use '🏠 Use Hub Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
+          toast.info("Please use '🏠 Use Default Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
         } else if (error.code === error.POSITION_UNAVAILABLE) {
           toast.error("❌ Location information is unavailable.");
         } else if (error.code === error.TIMEOUT) {
@@ -449,7 +449,7 @@ export default function DeliveryDashboard() {
 
     // If permission already denied, suggest alternatives
     if (locationPermissionDenied) {
-      toast.info("Please use '🏠 Use Hub Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
+      toast.info("Please use '🏠 Use Default Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
       return;
     }
 
@@ -501,7 +501,7 @@ export default function DeliveryDashboard() {
         
         if (error.code === error.PERMISSION_DENIED) {
           setLocationPermissionDenied(true); // Mark permission as denied
-          toast.info("Please use '🏠 Use Hub Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
+          toast.info("Please use '🏠 Use Default Location' or '✏️ Manual Location' instead", { autoClose: 4000 });
         } else if (error.code === error.POSITION_UNAVAILABLE) {
           toast.error("❌ Location information is unavailable.");
         } else if (error.code === error.TIMEOUT) {
@@ -846,7 +846,7 @@ export default function DeliveryDashboard() {
                 e.target.style.backgroundColor = "#e3f2fd";
               }}
             >
-              🏠 Use Hub Location
+              🏠 Use Default Location
             </button>
             <button
               onClick={() => setShowManualLocationModal(true)}
@@ -880,7 +880,7 @@ export default function DeliveryDashboard() {
                 color: "#856404",
                 lineHeight: "1.4"
               }}>
-                ℹ️ Auto-location disabled. Use Hub or Manual location instead.
+                ℹ️ Auto-location disabled. Use Default or Manual location instead.
               </div>
             )}
           </div>

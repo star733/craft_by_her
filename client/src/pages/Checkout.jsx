@@ -65,6 +65,15 @@ export default function Checkout() {
   const [deliveryDistance, setDeliveryDistance] = useState(null);
   const [deliveryCity, setDeliveryCity] = useState("");
 
+  // If the buyer selects an existing saved address, we assume delivery was
+  // already checked when that address was created.
+  const usingSavedAddress =
+    savedAddresses.length > 0 &&
+    !showNewAddressForm &&
+    !!selectedAddressId;
+
+  const canProceed = usingSavedAddress || deliveryStatus === "available";
+
   useEffect(() => {
     // Check if user is logged in
     if (!auth.currentUser) {
@@ -143,10 +152,10 @@ export default function Checkout() {
     }
 
     setDeliveryStatus('checking');
-    setDeliveryMessage("Checking delivery availability...");
+    setDeliveryMessage("Checking hub availability...");
 
     try {
-      const response = await fetch("http://localhost:5000/api/delivery-check/check", {
+      const response = await fetch("http://localhost:5000/api/hubs/check-pincode", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -154,26 +163,36 @@ export default function Checkout() {
         body: JSON.stringify({ pincode }),
       });
 
+      const contentType = response.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await response.text();
+        console.error("Non-JSON response from delivery check:", text);
+        setDeliveryStatus("error");
+        setDeliveryMessage("Error checking hub availability. Please try again.");
+        toast.error("Failed to check hub availability");
+        return;
+      }
+
       const data = await response.json();
 
       if (data.success && data.available) {
         setDeliveryStatus('available');
         setDeliveryMessage(data.message);
-        setDeliveryDistance(data.distance);
-        setDeliveryCity(data.city);
-        toast.success(`✅ Delivery available to ${data.city}!`);
+        setDeliveryDistance(null); // Not needed for hub system
+        setDeliveryCity(data.district);
+        toast.success(`✅ ${data.message}`);
       } else {
         setDeliveryStatus('unavailable');
         setDeliveryMessage(data.message);
-        setDeliveryDistance(data.distance);
-        setDeliveryCity(data.city);
-        toast.error(`❌ Sorry, delivery not available to ${data.city || 'this area'}`);
+        setDeliveryDistance(null);
+        setDeliveryCity(data.district || '');
+        toast.error(`❌ ${data.message}`);
       }
     } catch (error) {
-      console.error("Delivery check error:", error);
+      console.error("Hub check error:", error);
       setDeliveryStatus('error');
-      setDeliveryMessage("Error checking delivery availability. Please try again.");
-      toast.error("Failed to check delivery availability");
+      setDeliveryMessage("Error checking hub availability. Please try again.");
+      toast.error("Failed to check hub availability");
     }
   };
 
@@ -231,7 +250,7 @@ export default function Checkout() {
     // Use the common function
     await checkDeliveryForPincode(pincode);
 
-    // If delivery is available, set up new address form with this pincode
+    // If hub is available, set up new address form with this pincode
     if (deliveryStatus === 'available') {
       setBuyerDetails({
         name: cleanDisplayName(auth.currentUser.displayName) || "",
@@ -251,17 +270,17 @@ export default function Checkout() {
   };
 
   const validateForm = () => {
-    // This page is ONLY for delivery availability check
+    // This page is ONLY for hub availability check
     // Full form validation happens on the next page (payment-selection)
     
-    // Only check if delivery availability has been verified
-    if (deliveryStatus !== 'available') {
-      toast.error('Please check delivery availability for your pincode first');
-      console.log('❌ Delivery not available or not checked');
+    // Only check if hub availability has been verified
+    if (!canProceed) {
+      toast.error('Please check hub availability for your pincode first');
+      console.log('❌ Hub not available or not checked');
       return false;
     }
 
-    console.log('✅ Delivery availability confirmed');
+    console.log('✅ Hub availability confirmed');
     return true;
   };
 
@@ -377,149 +396,17 @@ export default function Checkout() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "30px" }}>
-          {/* Left Column: Saved Addresses, Delivery Check & Address */}
+          {/* Left Column: Delivery Check & Address */}
           <div>
-            {/* Saved Addresses - Show First */}
-            {savedAddresses.length > 0 && (
-              <div style={{
-                backgroundColor: "#fff",
-                borderRadius: "12px",
-                boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
-                padding: "20px",
-                marginBottom: "20px",
-                border: "2px solid #e3e8ef"
-              }}>
-                <h3 style={{ fontSize: "18px", color: "#5c4033", marginBottom: "15px", margin: 0 }}>
-                  📍 Your Saved Addresses
-                </h3>
-                <p style={{ fontSize: "13px", color: "#666", marginBottom: "15px" }}>
-                  Select an address to deliver to (delivery will be verified automatically)
-                </p>
-                
-                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                  {savedAddresses.map((addr) => (
-                    <label 
-                      key={addr._id} 
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-start",
-                        gap: "12px",
-                        padding: "15px",
-                        border: selectedAddressId === addr._id ? "2px solid #5c4033" : "1px solid #e9ecef",
-                        borderRadius: "10px",
-                        backgroundColor: selectedAddressId === addr._id ? "#fff7e6" : "#fdfdfd",
-                        cursor: "pointer",
-                        transition: "all 0.2s"
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selectedAddressId !== addr._id) {
-                          e.currentTarget.style.borderColor = "#5c4033";
-                          e.currentTarget.style.boxShadow = "0 2px 8px rgba(92, 64, 51, 0.1)";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selectedAddressId !== addr._id) {
-                          e.currentTarget.style.borderColor = "#e9ecef";
-                          e.currentTarget.style.boxShadow = "none";
-                        }
-                      }}
-                    >
-                      <input
-                        type="radio"
-                        name="savedAddress"
-                        checked={selectedAddressId === addr._id}
-                        onChange={() => selectSavedAddress(addr)}
-                        style={{ marginTop: 4, cursor: "pointer" }}
-                      />
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: "14px", marginBottom: "4px" }}>
-                          {addr.label || "Address"} 
-                          {addr.isDefault && (
-                            <span style={{ 
-                              color: "#28a745", 
-                              fontSize: 12, 
-                              marginLeft: 6,
-                              backgroundColor: "#d4edda",
-                              padding: "2px 8px",
-                              borderRadius: "4px"
-                            }}>
-                              Default
-                            </span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 13, color: "#333", marginBottom: "2px" }}>
-                          {addr.name} {addr.phone && `· ${addr.phone}`}
-                        </div>
-                        <div style={{ fontSize: 13, color: "#666" }}>
-                          {addr.address?.street}, {addr.address?.city}, {addr.address?.state} - {addr.address?.pincode}
-                          {addr.address?.landmark && ` (Near ${addr.address.landmark})`}
-                        </div>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-                
-                <div style={{ 
-                  marginTop: "15px", 
-                  paddingTop: "15px", 
-                  borderTop: "1px dashed #e9ecef",
-                  textAlign: "center"
-                }}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowNewAddressForm(true);
-                      setSelectedAddressId(null);
-                      setDeliveryStatus(null);
-                      setBuyerDetails({
-                        name: auth.currentUser.displayName || "",
-                        email: auth.currentUser.email || "",
-                        phone: "",
-                        address: {
-                          street: "",
-                          city: "",
-                          state: "Kerala",
-                          pincode: "",
-                          landmark: "",
-                        },
-                      });
-                    }}
-                    style={{
-                      padding: "10px 20px",
-                      border: "2px solid #5c4033",
-                      background: "white",
-                      color: "#5c4033",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      fontWeight: "600",
-                      transition: "all 0.2s"
-                    }}
-                    onMouseOver={(e) => {
-                      e.target.style.background = "#5c4033";
-                      e.target.style.color = "white";
-                    }}
-                    onMouseOut={(e) => {
-                      e.target.style.background = "white";
-                      e.target.style.color = "#5c4033";
-                    }}
-                  >
-                    + Use a Different Address
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 1: Delivery Availability Check - For New Addresses */}
-            {(savedAddresses.length === 0 || showNewAddressForm) && (
-              <div style={{
-                backgroundColor: "#fff",
-                borderRadius: "12px",
-                boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
-                padding: "20px",
-                marginBottom: "20px",
-                border: deliveryStatus === 'available' ? "2px solid #28a745" : deliveryStatus === 'unavailable' ? "2px solid #dc3545" : "2px solid #e3e8ef"
-              }}>
+            {/* STEP 1: Delivery Availability Check with Saved Addresses */}
+            <div style={{
+              backgroundColor: "#fff",
+              borderRadius: "12px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.08)",
+              padding: "20px",
+              marginBottom: "20px",
+              border: deliveryStatus === 'available' ? "2px solid #28a745" : deliveryStatus === 'unavailable' ? "2px solid #dc3545" : "2px solid #e3e8ef"
+            }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "15px" }}>
                 <div style={{
                   width: "28px",
@@ -538,21 +425,147 @@ export default function Checkout() {
                   color: "#5c4033",
                   margin: 0
                 }}>
-                  Check Delivery Availability
+                  Hub Availability Check
                 </h2>
               </div>
 
-              <p style={{ color: "#666", marginBottom: "15px", lineHeight: "1.5", fontSize: "13px" }}>
-                📍 We deliver to Kottayam and surrounding areas within 50 km from Koovappally. Enter your pincode to check if delivery is available.
-              </p>
+              {/* Show saved addresses if available */}
+              {savedAddresses.length > 0 && !showNewAddressForm && (
+                <>
+                  <p style={{ fontSize: "13px", color: "#666", marginBottom: "15px" }}>
+                    Select a saved address or check delivery for a new location
+                  </p>
+                  
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px", marginBottom: "15px" }}>
+                    {savedAddresses.map((addr) => (
+                      <label 
+                        key={addr._id} 
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: "12px",
+                          padding: "15px",
+                          border: selectedAddressId === addr._id ? "2px solid #5c4033" : "1px solid #e9ecef",
+                          borderRadius: "10px",
+                          backgroundColor: selectedAddressId === addr._id ? "#fff7e6" : "#fdfdfd",
+                          cursor: "pointer",
+                          transition: "all 0.2s"
+                        }}
+                        onMouseEnter={(e) => {
+                          if (selectedAddressId !== addr._id) {
+                            e.currentTarget.style.borderColor = "#5c4033";
+                            e.currentTarget.style.boxShadow = "0 2px 8px rgba(92, 64, 51, 0.1)";
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (selectedAddressId !== addr._id) {
+                            e.currentTarget.style.borderColor = "#e9ecef";
+                            e.currentTarget.style.boxShadow = "none";
+                          }
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="savedAddress"
+                          checked={selectedAddressId === addr._id}
+                          onChange={() => selectSavedAddress(addr)}
+                          style={{ marginTop: 4, cursor: "pointer" }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: "14px", marginBottom: "4px" }}>
+                            {addr.label || "Address"} 
+                            {addr.isDefault && (
+                              <span style={{ 
+                                color: "#28a745", 
+                                fontSize: 12, 
+                                marginLeft: 6,
+                                backgroundColor: "var(--accent-soft, #f3e7dc)",
+                                padding: "2px 8px",
+                                borderRadius: "4px"
+                              }}>
+                                Default
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 13, color: "#333", marginBottom: "2px" }}>
+                            {addr.name} {addr.phone && `· ${addr.phone}`}
+                          </div>
+                          <div style={{ fontSize: 13, color: "#666" }}>
+                            {addr.address?.street}, {addr.address?.city}, {addr.address?.state} - {addr.address?.pincode}
+                            {addr.address?.landmark && ` (Near ${addr.address.landmark})`}
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  
+                  <div style={{ 
+                    marginTop: "15px", 
+                    paddingTop: "15px", 
+                    borderTop: "1px dashed #e9ecef",
+                    textAlign: "center"
+                  }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowNewAddressForm(true);
+                        setSelectedAddressId(null);
+                        setDeliveryStatus(null);
+                        setPincodeInput("");
+                        setBuyerDetails({
+                          name: cleanDisplayName(auth.currentUser.displayName) || "",
+                          email: auth.currentUser.email || "",
+                          phone: "",
+                          address: {
+                            street: "",
+                            city: "",
+                            state: "Kerala",
+                            pincode: "",
+                            landmark: "",
+                          },
+                        });
+                      }}
+                      style={{
+                        padding: "10px 20px",
+                        border: "2px solid #5c4033",
+                        background: "white",
+                        color: "#5c4033",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        transition: "all 0.2s"
+                      }}
+                      onMouseOver={(e) => {
+                        e.target.style.background = "#5c4033";
+                        e.target.style.color = "white";
+                      }}
+                      onMouseOut={(e) => {
+                        e.target.style.background = "white";
+                        e.target.style.color = "#5c4033";
+                      }}
+                    >
+                      + Add New Address
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* Delivery check for new address */}
+              {(savedAddresses.length === 0 || showNewAddressForm) && (
+                <>
+                  <p style={{ color: "#666", marginBottom: "15px", lineHeight: "1.5", fontSize: "13px" }}>
+                    📍 We deliver across Kerala through our district hubs. Enter your pincode to check which hub serves your area.
+                  </p>
 
               <div style={{ display: "flex", gap: "10px", marginBottom: "14px" }}>
                 <input
                   type="text"
                   value={pincodeInput}
                   onChange={(e) => {
-                    setPincodeInput(e.target.value);
-                    // Reset status when typing
+                    const value = e.target.value.replace(/\D/g, "").slice(0, 6);
+                    setPincodeInput(value);
+                    // Reset status when typing a new pincode
                     if (deliveryStatus !== null) {
                       setDeliveryStatus(null);
                       setDeliveryMessage("");
@@ -560,18 +573,21 @@ export default function Checkout() {
                   }}
                   maxLength="6"
                   placeholder="Enter your 6-digit pincode"
-                  disabled={deliveryStatus === 'available'}
+                  disabled={deliveryStatus === 'checking'}
                   style={{
                     flex: 1,
                     padding: "10px 14px",
-                    border: "2px solid #ddd",
+                    border: deliveryStatus === 'available' ? "2px solid #28a745" : 
+                           deliveryStatus === 'unavailable' ? "2px solid #dc3545" : "2px solid #ddd",
                     borderRadius: "8px",
                     fontSize: "14px",
                     fontWeight: "500",
-                    backgroundColor: deliveryStatus === 'available' ? "#f0f0f0" : "white",
+                    backgroundColor: deliveryStatus === 'available' ? "#f0f9f4" : 
+                                    deliveryStatus === 'unavailable' ? "#fff5f5" : "white",
+                    cursor: (deliveryStatus === 'available' || deliveryStatus === 'unavailable') ? "not-allowed" : "text",
                   }}
                   onKeyPress={(e) => {
-                    if (e.key === 'Enter') {
+                    if (e.key === 'Enter' && deliveryStatus !== 'available' && deliveryStatus !== 'unavailable') {
                       checkDeliveryAvailability();
                     }
                   }}
@@ -579,24 +595,25 @@ export default function Checkout() {
                 <button
                   type="button"
                   onClick={checkDeliveryAvailability}
-                  disabled={deliveryStatus === 'checking' || deliveryStatus === 'available'}
+                  disabled={deliveryStatus === 'checking' || deliveryStatus === 'available' || deliveryStatus === 'unavailable'}
                   style={{
                     padding: "10px 24px",
                     background: deliveryStatus === 'checking' ? "#ccc" : 
                                deliveryStatus === 'available' ? "#28a745" : 
+                               deliveryStatus === 'unavailable' ? "#dc3545" :
                                "linear-gradient(135deg, #5c4033 0%, #8b6f47 100%)",
                     color: "white",
                     border: "none",
                     borderRadius: "8px",
                     fontSize: "14px",
                     fontWeight: "600",
-                    cursor: deliveryStatus === 'checking' || deliveryStatus === 'available' ? "not-allowed" : "pointer",
+                    cursor: (deliveryStatus === 'checking' || deliveryStatus === 'available' || deliveryStatus === 'unavailable') ? "not-allowed" : "pointer",
                     whiteSpace: "nowrap",
                     transition: "transform 0.2s",
                     minWidth: "100px"
                   }}
                   onMouseOver={(e) => {
-                    if (deliveryStatus !== 'checking' && deliveryStatus !== 'available') {
+                    if (deliveryStatus !== 'checking' && deliveryStatus !== 'available' && deliveryStatus !== 'unavailable') {
                       e.target.style.transform = "scale(1.05)";
                     }
                   }}
@@ -606,6 +623,7 @@ export default function Checkout() {
                 >
                   {deliveryStatus === 'checking' ? '⏳ Checking...' : 
                    deliveryStatus === 'available' ? '✓ Checked' : 
+                   deliveryStatus === 'unavailable' ? '✗ Checked' :
                    '📍 Check'}
                 </button>
               </div>
@@ -616,9 +634,9 @@ export default function Checkout() {
                   padding: "12px 16px",
                   borderRadius: "8px",
                   fontSize: "13px",
-                  background: deliveryStatus === 'available' ? "#d4edda" : "#f8d7da",
-                  border: `2px solid ${deliveryStatus === 'available' ? "#28a745" : "#dc3545"}`,
-                  color: deliveryStatus === 'available' ? "#155724" : "#721c24",
+                  background: deliveryStatus === 'available' ? "var(--accent-soft, #f3e7dc)" : "#f8d7da",
+                  border: `2px solid ${deliveryStatus === 'available' ? "#d4a574" : "#dc3545"}`,
+                  color: deliveryStatus === 'available' ? "var(--brand, #8b5e34)" : "#721c24",
                 }}>
                   <div style={{ fontWeight: "700", marginBottom: "4px", fontSize: "14px" }}>
                     {deliveryStatus === 'available' ? '✅ Delivery Available!' : '❌ Delivery Not Available'}
@@ -667,8 +685,9 @@ export default function Checkout() {
                   `}</style>
                 </div>
               )}
+                </>
+              )}
             </div>
-            )}
 
             {/* STEP 2: Address Details - Only show if delivery is available and using new address */}
             {deliveryStatus === 'available' && showNewAddressForm && (
@@ -1069,19 +1088,19 @@ export default function Checkout() {
             {/* Place Order Button */}
             <button
               onClick={handleProceedToPayment}
-              disabled={loading || deliveryStatus !== 'available'}
+              disabled={loading || !canProceed}
               style={{
                 width: "100%",
                 padding: "14px",
-                background: loading || deliveryStatus !== 'available' ? "#ccc" : "linear-gradient(135deg, #5c4033 0%, #7d5a47 100%)",
+                background: loading || !canProceed ? "#ccc" : "linear-gradient(135deg, #5c4033 0%, #7d5a47 100%)",
                 color: "white",
                 border: "none",
                 borderRadius: "10px",
                 fontSize: "15px",
                 fontWeight: "700",
-                cursor: loading || deliveryStatus !== 'available' ? "not-allowed" : "pointer",
+                cursor: loading || !canProceed ? "not-allowed" : "pointer",
                 transition: "all 0.3s ease",
-                boxShadow: loading || deliveryStatus !== 'available' ? "none" : "0 4px 15px rgba(92, 64, 51, 0.3)",
+                boxShadow: loading || !canProceed ? "none" : "0 4px 15px rgba(92, 64, 51, 0.3)",
                 textTransform: "uppercase",
                 letterSpacing: "0.5px",
                 display: "flex",
@@ -1090,13 +1109,13 @@ export default function Checkout() {
                 gap: "8px"
               }}
               onMouseEnter={(e) => {
-                if (!loading && deliveryStatus === 'available') {
+                if (!loading && canProceed) {
                   e.target.style.transform = "translateY(-2px)";
                   e.target.style.boxShadow = "0 6px 20px rgba(92, 64, 51, 0.4)";
                 }
               }}
               onMouseOut={(e) => {
-                if (!loading && deliveryStatus === 'available') {
+                if (!loading && canProceed) {
                   e.target.style.transform = "translateY(0)";
                   e.target.style.boxShadow = "0 4px 15px rgba(92, 64, 51, 0.3)";
                 }
@@ -1121,7 +1140,7 @@ export default function Checkout() {
                     }
                   `}</style>
                 </>
-              ) : deliveryStatus !== 'available' ? (
+              ) : !canProceed ? (
                 <>🔒 Check Delivery First</>
               ) : (
                 <>
@@ -1130,7 +1149,7 @@ export default function Checkout() {
               )}
             </button>
 
-            {deliveryStatus !== 'available' && (
+            {!canProceed && (
               <p style={{ 
                 fontSize: "12px", 
                 color: "#999", 

@@ -18,6 +18,40 @@ import { toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import { useConfirm } from "../context/ConfirmContext";
 
+// Helper function to format order status for customer display
+const formatOrderStatus = (orderStatus) => {
+  const statusMap = {
+    'pending': 'Order Placed',
+    'confirmed': 'Order Confirmed', 
+    'at_seller_hub': 'Processing',
+    'shipped': 'Shipped',
+    'out_for_delivery': 'Out for Delivery',
+    'delivered': 'Delivered',
+    'cancelled': 'Cancelled',
+    'in_transit_to_customer_hub': 'Shipped', // Legacy status mapping
+    'at_customer_hub': 'Out for Delivery' // Legacy status mapping
+  };
+  
+  return statusMap[orderStatus] || orderStatus;
+};
+
+// Helper function to get status color
+const getStatusColor = (orderStatus) => {
+  const colorMap = {
+    'pending': '#ffc107',
+    'confirmed': '#17a2b8',
+    'at_seller_hub': '#fd7e14',
+    'shipped': '#6f42c1',
+    'out_for_delivery': '#20c997',
+    'delivered': '#28a745',
+    'cancelled': '#dc3545',
+    'in_transit_to_customer_hub': '#6f42c1', // Legacy status mapping
+    'at_customer_hub': '#20c997' // Legacy status mapping
+  };
+  
+  return colorMap[orderStatus] || '#6c757d';
+};
+
 export default function Account() {
   const navigate = useNavigate();
   const { confirm } = useConfirm();
@@ -367,10 +401,10 @@ function Overview({ user, userName, cart, wishlist, orders, onBrowse }) {
                     <div style={{ fontWeight: "600", color: "#5c4033" }}>₹{order.finalAmount}</div>
                     <div style={{ 
                       fontSize: "12px", 
-                      color: order.orderStatus === "delivered" ? "#28a745" : "#ffc107",
+                      color: getStatusColor(order.orderStatus),
                       fontWeight: "600"
                     }}>
-                      {order.orderStatus}
+                      {formatOrderStatus(order.orderStatus)}
                     </div>
                   </div>
                 </div>
@@ -433,10 +467,10 @@ function OrdersSection({ orders, onRefresh }) {
                   </div>
                   <div style={{ 
                     fontSize: "12px", 
-                    color: order.orderStatus === "delivered" ? "#28a745" : "#ffc107",
+                    color: getStatusColor(order.orderStatus),
                     fontWeight: "600"
                   }}>
-                    {order.orderStatus}
+                    {formatOrderStatus(order.orderStatus)}
                   </div>
                 </div>
               </div>
@@ -824,7 +858,13 @@ function WishlistSection({ wishlist, onRefresh }) {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(250px, 1fr))", gap: "16px" }}>
-          {wishlist.products.map((product) => (
+          {wishlist.products
+            .filter(product => {
+              // Exclude test products
+              if (product.title && product.title.toLowerCase().includes("test product")) return false;
+              return true;
+            })
+            .map((product) => (
             <div key={product._id} style={{ 
               background: "#fff", 
               padding: "16px", 

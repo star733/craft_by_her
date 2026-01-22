@@ -27,21 +27,62 @@ export default function Register() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [role, setRole] = useState("user"); // Default to buyer/user
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadingGoogle, setLoadingGoogle] = useState(false);
   const [errors, setErrors] = useState({ name: "", phone: "", email: "", password: "" });
   const [touched, setTouched] = useState({ name: false, phone: false, email: false, password: false });
+  
+  // Seller-specific fields (removed business name & license - not needed for housewives)
+  const [proofDocument, setProofDocument] = useState(null);
+  
+  const [sellerErrors, setSellerErrors] = useState({ 
+    proofDocument: ""
+  });
+  const [sellerTouched, setSellerTouched] = useState({ 
+    proofDocument: false
+  });
+  
   const navigate = useNavigate();
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
 
   const onName  = (v) => { setName(v);   setErrors((e) => ({ ...e, name: validateName(v) })); };
   const onPhone = (v) => { setPhone(v);  setErrors((e) => ({ ...e, phone: validatePhone(v) })); };
   const onEmail = (v) => { setEmail(v);  setErrors((e) => ({ ...e, email: validateEmail(v) })); };
   const onPw    = (v) => { setPassword(v); setErrors((e) => ({ ...e, password: validatePassword(v) })); };
+  
+  const onProofDocument = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      // Validate file type
+      const validTypes = ['image/jpeg', 'image/png', 'image/jpg', 'application/pdf'];
+      if (!validTypes.includes(file.type)) {
+        setSellerErrors((e) => ({ ...e, proofDocument: "Only JPG, PNG, and PDF files are allowed" }));
+        return;
+      }
+      
+      // Validate file size (5MB max)
+      if (file.size > 5 * 1024 * 1024) {
+        setSellerErrors((e) => ({ ...e, proofDocument: "File size must be less than 5MB" }));
+        return;
+      }
+      
+      setProofDocument(file);
+      setSellerErrors((e) => ({ ...e, proofDocument: "" }));
+    }
+  };
+  
+
+  
+
+  
+
 
   const onSubmit = async (e) => {
     e.preventDefault();
 
+    // Validate basic fields
     const formError = validateRegister({ name, phone, email, password });
     if (formError) {
       setErrors({
@@ -54,6 +95,8 @@ export default function Register() {
       toast.error(formError, { className: "custom-toast" });
       return;
     }
+
+    // No additional validation needed for seller registration
 
     setLoading(true);
     try {
@@ -69,34 +112,100 @@ export default function Register() {
       // 2) Save display name
       if (name) await updateProfile(user, { displayName: name });
 
-      // 3) Send verification email
-      await sendEmailVerification(user, {
-        url: `${window.location.origin}/action`,
-        handleCodeInApp: true,
-      });
+      // 3) Send verification email ONLY for buyers/users, NOT for sellers
+      // Sellers will get email ONLY after admin approval
+      if (role !== "seller") {
+        await sendEmailVerification(user, {
+          url: `${window.location.origin}/action`,
+          handleCodeInApp: true,
+        });
+      }
 
-      // 4) (Optional) sync preliminary profile to backend
+      // 4) Sync preliminary profile to backend with role information
       try {
         const idToken = await user.getIdToken();
-        await fetch("http://localhost:5000/api/auth/sync", {
+        await fetch(`${API_BASE}/api/auth/sync`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({ phone }),
+          body: JSON.stringify({ phone, role }), // Include role in sync
         });
       } catch (e) {
         console.warn("Profile sync skipped/failed:", e);
       }
 
-      // 5) Sign out to enforce verification before first login
+      // 5) If seller, submit seller application immediately
+      let sellerApplicationSuccess = true;
+      let sellerApplicationError = null;
+      if (role === "seller") {
+        try {
+          const idToken = await user.getIdToken();
+          const formData = new FormData();
+          formData.append('name', name.trim());
+          formData.append('email', email.trim());
+          formData.append('phone', phone.trim());
+          
+          console.log("Submitting seller application...", {
+            name: name.trim(),
+            email: email.trim(),
+            phone: phone.trim()
+          });
+          
+          const applicationResponse = await fetch(`${API_BASE}/api/seller/applications/register`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${idToken}` },
+            body: formData
+          });
+          
+          console.log("Application response status:", applicationResponse.status);
+          
+          if (!applicationResponse.ok) {
+            const errorData = await applicationResponse.json().catch(() => ({ error: "Network error" }));
+            console.error("Application submission failed:", errorData);
+            throw new Error(errorData.error || `Server error: ${applicationResponse.status}`);
+          }
+          
+          const applicationData = await applicationResponse.json();
+          console.log("Application submission response:", applicationData);
+          
+          if (!applicationData.success) {
+            throw new Error(applicationData.error || "Failed to submit seller application");
+          }
+        } catch (appErr) {
+          console.error("Seller application submission error:", appErr);
+          sellerApplicationSuccess = false;
+          sellerApplicationError = appErr.message || "Unknown error";
+        }
+      }
+
+      // 6) Sign out to enforce verification before first login
       await signOut(auth);
 
-      // ✅ Correct message for registration flow
-      toast.success("Verification email sent. Please check your inbox.", {
-        className: "custom-toast",
-        autoClose: 2000,
-      });
+      // ✅ Show appropriate message based on success
+      if (role === "seller") {
+        if (sellerApplicationSuccess) {
+          toast.success("Registration successful! Your seller application has been submitted and is pending admin approval. You'll receive an email only after admin approves your application.", {
+            className: "custom-toast",
+            autoClose: 6000,
+          });
+        } else {
+          // Show detailed error message
+          const errorMsg = sellerApplicationError 
+            ? `Registration successful but seller application failed: ${sellerApplicationError}. Please contact support.`
+            : "Registration successful but seller application failed. Please contact support.";
+          toast.error(errorMsg, { 
+            className: "custom-toast",
+            autoClose: 6000,
+          });
+        }
+      } else {
+        toast.success("Verification email sent. Please check your inbox.", {
+          className: "custom-toast",
+          autoClose: 2000,
+        });
+      }
 
-      setTimeout(() => navigate("/login"), 1200);
+      // Redirect to login
+      setTimeout(() => navigate("/login"), role === "seller" ? 2000 : 1200);
     } catch (err) {
       console.error(err);
       const msg =
@@ -131,14 +240,15 @@ export default function Register() {
       // Optional: call backend sync similar to login
       try {
         const idToken = await gUser.getIdToken();
-        await fetch("http://localhost:5000/api/auth/sync", {
+        await fetch(`${API_BASE}/api/auth/sync`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
           body: JSON.stringify({
             name: gUser.displayName || "",
             email: gUser.email,
             photoURL: gUser.photoURL || "",
-            provider: gUser.providerData?.[0]?.providerId || "google",
+            provider: gUser.providerData?.[0]?.providerId || "google"
+            // Note: Not sending role here to prevent premature role assignment
           }),
         });
       } catch {}
@@ -164,6 +274,35 @@ export default function Register() {
           <h2 className="bk-auth-title">Sign Up</h2>
 
           <form autoComplete="on" onSubmit={onSubmit}>
+            {/* ROLE SELECTION */}
+            <div className="bk-field">
+              <label className="bk-auth-label">I want to register as:</label>
+              <div style={{ display: "flex", gap: "15px", marginTop: "8px" }}>
+                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="role"
+                    value="user"
+                    checked={role === "user"}
+                    onChange={(e) => setRole(e.target.value)}
+                    style={{ marginRight: "8px" }}
+                  />
+                  Buyer/Customer
+                </label>
+                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                  <input
+                    type="radio"
+                    name="role"
+                    value="seller"
+                    checked={role === "seller"}
+                    onChange={(e) => setRole(e.target.value)}
+                    style={{ marginRight: "8px" }}
+                  />
+                  Seller
+                </label>
+              </div>
+            </div>
+
             {/* NAME */}
             <div className="bk-field">
               <input
@@ -234,6 +373,24 @@ export default function Register() {
                 <span className="field-error">{errors.password}</span>
               )}
             </div>
+
+            {/* SELLER-SPECIFIC FIELDS */}
+            {role === "seller" && (
+              <>
+                {/* INFO MESSAGE */}
+                <div style={{ 
+                  background: "#e8f5e9", 
+                  padding: "12px", 
+                  borderRadius: "8px", 
+                  marginBottom: "15px",
+                  border: "1px solid #81c784"
+                }}>
+                  <p style={{ fontSize: "12px", color: "#2e7d32", margin: 0, lineHeight: "1.4" }}>
+                    💚 <strong>Welcome!</strong> Register as a seller and start selling your products. Your application will be reviewed by admin.
+                  </p>
+                </div>
+              </>
+            )}
 
             <div className="bk-form-actions">
               <button 

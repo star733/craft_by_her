@@ -31,7 +31,18 @@ export default function Action() {
         if (mode === "verifyEmail") {
           await applyActionCode(auth, oobCode);
           toast.success("Email verified! Please sign in.", { className: "custom-toast" });
-          setTimeout(() => navigate("/login"), 1200);
+
+          // Check if this was a seller registration
+          const postVerificationRole = localStorage.getItem("postVerificationRole");
+          if (postVerificationRole === "seller") {
+            // Clear the stored role
+            localStorage.removeItem("postVerificationRole");
+            // Redirect sellers directly to the seller application page
+            setTimeout(() => navigate("/seller/application"), 1200);
+          } else {
+            // Redirect other users to login
+            setTimeout(() => navigate("/login"), 1200);
+          }
           return;
         }
 

@@ -164,17 +164,29 @@ router.get("/:productId", async (req, res) => {
       return res.status(404).json({ success: false, error: "Product not found" });
     }
 
-    // Prefer candidates from the same category
+    // ONLY use candidates from the same category
+    const targetCategory = (targetProduct.category || "").toString().toLowerCase();
     const sameCategory = dbProducts.filter(p => 
       String(p.id) !== String(productId) && 
-      (p.category || "").toString().toLowerCase() === (targetProduct.category || "").toString().toLowerCase()
+      (p.category || "").toString().toLowerCase() === targetCategory
     );
-    const pool = sameCategory.length >= 3
-      ? sameCategory
-      : dbProducts.filter(p => String(p.id) !== String(productId));
 
-    // Compute similarities within the chosen pool
-    const similarities = pool
+    // If no same-category products, return empty
+    if (sameCategory.length === 0) {
+      console.log(`⚠️ No other products found in category: ${targetProduct.category}`);
+      return res.json({
+        success: true,
+        targetProduct: { id: targetProduct.id, name: targetProduct.name, category: targetProduct.category },
+        recommendations: [],
+        total: 0,
+        source: 'basic-engine',
+        method: 'content-based',
+        message: `No other products available in category: ${targetProduct.category}`
+      });
+    }
+
+    // Compute similarities within the same category only
+    const similarities = sameCategory
       .map(product => ({ product, similarity: calculateSimilarity(targetProduct, product) }))
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, n);
@@ -190,6 +202,8 @@ router.get("/:productId", async (req, res) => {
       description: item.product.description,
       similarity: Math.round(item.similarity * 100) / 100
     }));
+
+    console.log(`✅ Found ${recommendations.length} same-category recommendations for '${targetProduct.category}'`);
 
     return res.json({
       success: true,

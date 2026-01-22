@@ -140,8 +140,8 @@ export default function PaymentSelection() {
   useEffect(() => {
     // Redirect if no cart items
     if (!cartItems) {
-      toast.error("No order data found. Please start from checkout.");
-      navigate("/checkout");
+      toast.error("No order data found. Please start from cart.");
+      navigate("/cart");
       return;
     }
 
@@ -1195,7 +1195,7 @@ export default function PaymentSelection() {
         {/* Action Buttons */}
         <div style={{ display: "flex", gap: "16px", marginTop: "24px" }}>
           <button
-            onClick={() => navigate("/checkout")}
+            onClick={() => navigate("/cart")}
             style={{
               flex: "0 0 auto",
               padding: "16px 32px",

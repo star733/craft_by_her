@@ -84,6 +84,13 @@ export default function ProductCard({ p }) {
           )}
         </div>
 
+        {/* Category display */}
+        <div className="cbh-card-category" style={{ fontSize: "12px", color: "#666", marginBottom: "8px" }}>
+          {p.mainCategory && p.subCategory 
+            ? `${p.mainCategory} > ${p.subCategory}`
+            : p.subCategory || p.category?.name || p.category || "Uncategorized"}
+        </div>
+
         {/* ✅ Variants with weight + price */}
         {p.variants && p.variants.length > 0 ? (
           <div className="cbh-card-price">

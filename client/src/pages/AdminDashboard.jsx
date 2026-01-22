@@ -5,8 +5,12 @@ import "react-toastify/dist/ReactToastify.css";
 import { signOut } from "firebase/auth";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useConfirm } from "../context/ConfirmContext";
+import SalesPredictionDashboard from "../components/SalesPredictionDashboard";
+import SellerApplications from "../components/SellerApplications";
 
-export default function AdminDashboard() {
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+
+export default function UpdatedAdminDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { confirm } = useConfirm();
@@ -19,24 +23,24 @@ export default function AdminDashboard() {
     deliveryCommission: 0,
     newThisWeek: 0
   });
-  const [form, setForm] = useState({
-    title: "",
-    category: "",
-    stock: "",
-    price: "",
-    variants: [{ weight: "", price: "" }],
-    image: null,
-  });
   const [errors, setErrors] = useState({ title: "" });
   const [editingId, setEditingId] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
   const [currentImageUrl, setCurrentImageUrl] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [activeSection, setActiveSection] = useState("dashboard");
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+    
+    // Seller Management State
+    const [pendingApplications, setPendingApplications] = useState([]);
+    const [selectedApplication, setSelectedApplication] = useState(null);
+    const [showApplicationModal, setShowApplicationModal] = useState(false);
+    const [approvedSellers, setApprovedSellers] = useState([]);
+    const [sellerProducts, setSellerProducts] = useState({});
+    const [loadingSellers, setLoadingSellers] = useState(false);
+    const [expandedSeller, setExpandedSeller] = useState(null);
   
   // Delivery Management State
   const [deliveryAgents, setDeliveryAgents] = useState([]);
@@ -63,6 +67,29 @@ export default function AdminDashboard() {
   const [availableAgents, setAvailableAgents] = useState([]);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedOrderForAssignment, setSelectedOrderForAssignment] = useState(null);
+
+  // Hub Management State
+  const [hubs, setHubs] = useState([]);
+  const [hubManagers, setHubManagers] = useState([]);
+  const [activeHubTab, setActiveHubTab] = useState("pending");
+  const [showCreateManager, setShowCreateManager] = useState(false);
+  const [newManager, setNewManager] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    username: "",
+    password: "",
+    hubId: ""
+  });
+
+  // Hub Orders Management State
+  const [pendingHubOrders, setPendingHubOrders] = useState([]);
+  const [approvedHubOrders, setApprovedHubOrders] = useState([]);
+  const [adminNotifications, setAdminNotifications] = useState([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [selectedHubOrder, setSelectedHubOrder] = useState(null);
+  const [showHubOrderModal, setShowHubOrderModal] = useState(false);
 
   // ✅ Handle browser navigation properly - Block all navigation except logout
   useEffect(() => {
@@ -103,12 +130,18 @@ export default function AdminDashboard() {
     };
   }, [navigate, location.pathname, isLoggingOut]);
 
-  // ✅ Fetch products
-  const fetchProducts = async (user) => {
+  // Note: Seller management functions removed - sellers register themselves
+
+  // ✅ Fetch seller applications with status filter
+  const fetchSellerApplications = async (user, status = null) => {
     try {
       await user.reload();
       const token = await user.getIdToken(true);
-      const res = await fetch("http://localhost:5000/api/admin/products", {
+      let url = `${API_BASE}/api/seller/applications`;
+      if (status) {
+        url += `?status=${status}`;
+      }
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -118,38 +151,184 @@ export default function AdminDashboard() {
       }
 
       const data = await res.json();
-      setProducts(Array.isArray(data) ? data : []);
+      if (data.success) {
+        setPendingApplications(data.applications || []);
+      }
     } catch (err) {
-      console.error("Fetch products error:", err);
+      console.error("Fetch seller applications error:", err);
+      toast.error("Failed to fetch seller applications");
+    }
+  };
+  
+  // ✅ Fetch pending seller applications (wrapper for backward compatibility)
+  const fetchPendingApplications = async (user) => {
+    await fetchSellerApplications(user, 'submitted');
+  };
+
+  // ✅ Approve seller application
+  const approveApplication = async (applicationId) => {
+    try {
+      const user = auth.currentUser;
+      const token = await user.getIdToken(true);
+      
+      const res = await fetch(`${API_BASE}/api/seller/applications/${applicationId}/status`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ status: 'approved' })
+      });
+      
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
+      }
+      
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Seller application approved successfully");
+        // Refresh the list
+        fetchPendingApplications(user);
+      } else {
+        toast.error(data.error || "Failed to approve application");
+      }
+    } catch (err) {
+      console.error("Approve application error:", err);
+      toast.error("Failed to approve application");
     }
   };
 
-  const saveProduct = async (e) => {
-    e.preventDefault();
+  // ✅ Reject seller application
+  const rejectApplication = async (applicationId, rejectionReason) => {
     try {
       const user = auth.currentUser;
-      const token = await user.getIdToken();
-      const fd = new FormData();
-      fd.append("title", form.title);
-      fd.append("category", form.category);
-      fd.append("stock", form.stock);
-      fd.append("variants", JSON.stringify(form.variants));
-      if (form.image) fd.append("image", form.image);
+      const token = await user.getIdToken(true);
+      
+      const res = await fetch(`${API_BASE}/api/seller/applications/${applicationId}/status`, {
+        method: "PUT",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ status: 'rejected', rejectionReason })
+      });
+      
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
+      }
+      
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Seller application rejected");
+        // Refresh the list
+        fetchPendingApplications(user);
+      } else {
+        toast.error(data.error || "Failed to reject application");
+      }
+    } catch (err) {
+      console.error("Reject application error:", err);
+      toast.error("Failed to reject application");
+    }
+  };
 
-      const res = await fetch("http://localhost:5000/api/admin/products", {
-        method: "POST",
+  // ✅ View application details
+  const viewApplicationDetails = (application) => {
+    setSelectedApplication(application);
+    setShowApplicationModal(true);
+  };
+
+  // ✅ Close application modal
+  const closeApplicationModal = () => {
+    setSelectedApplication(null);
+    setShowApplicationModal(false);
+  };
+
+  // ✅ Fetch all approved sellers with their details
+  const fetchApprovedSellers = async (user) => {
+    try {
+      setLoadingSellers(true);
+      await user.reload();
+      const token = await user.getIdToken(true);
+      
+      // Fetch approved seller applications
+      const res = await fetch(`${API_BASE}/api/seller/applications?status=approved`, {
         headers: { Authorization: `Bearer ${token}` },
-        body: fd,
       });
 
-      if (!res.ok) throw new Error("Failed to save product");
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
+      }
 
-      toast.success("Product added!");
-      setForm({ title: "", category: "", stock: "", variants: [{ weight: "", price: "" }], image: null });
-      fetchProducts(user);
+      const data = await res.json();
+      if (data.success) {
+        const sellers = data.applications || [];
+        setApprovedSellers(sellers);
+        
+        // Fetch products for each seller
+        const productsMap = {};
+        for (const seller of sellers) {
+          try {
+            const productsRes = await fetch(`${API_BASE}/api/admin/products`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (productsRes.ok) {
+              const allProducts = await productsRes.json();
+              // Filter products by seller email or userId
+              const sellerProducts = Array.isArray(allProducts) 
+                ? allProducts.filter(p => {
+                    // Exclude test products
+                    if (p.title && p.title.toLowerCase().includes("test product")) return false;
+                    return p.sellerEmail === seller.email || 
+                           p.sellerId === seller.userId ||
+                           (p.seller && (p.seller.email === seller.email || p.seller.uid === seller.userId));
+                  })
+                : [];
+              productsMap[seller._id] = sellerProducts;
+            }
+          } catch (err) {
+            console.error(`Error fetching products for seller ${seller.email}:`, err);
+            productsMap[seller._id] = [];
+          }
+        }
+        setSellerProducts(productsMap);
+      }
     } catch (err) {
-      console.error(err);
-      toast.error("Error saving product");
+      console.error("Fetch approved sellers error:", err);
+      toast.error("Failed to fetch approved sellers");
+    } finally {
+      setLoadingSellers(false);
+    }
+  };
+
+  // ✅ Fetch products
+  const fetchProducts = async (user) => {
+    try {
+      console.log("🔍 Fetching products...");
+      await user.reload();
+      const token = await user.getIdToken(true);
+      console.log("Token obtained:", token ? "✅" : "❌");
+      
+      const res = await fetch(`${API_BASE}/api/admin/products`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      console.log("Response status:", res.status);
+
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
+      }
+
+      const data = await res.json();
+      console.log("Products received:", data);
+      console.log("Products count:", Array.isArray(data) ? data.length : 0);
+      setProducts(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("❌ Fetch products error:", err);
+      toast.error("Failed to load products");
     }
   };
 
@@ -207,12 +386,64 @@ export default function AdminDashboard() {
     };
   };
 
+  // ✅ Fetch delivery agents
+  const fetchDeliveryAgents = async (user) => {
+    try {
+      await user.reload();
+      const token = await user.getIdToken(true);
+      const res = await fetch(`${API_BASE}/api/delivery-agents`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
+      }
+
+      const data = await res.json();
+      console.log("Delivery agents received:", data);
+      setDeliveryAgents(Array.isArray(data.agents) ? data.agents : []);
+    } catch (err) {
+      console.error("❌ Fetch delivery agents error:", err);
+      toast.error("Failed to load delivery agents");
+    }
+  };
+
+  // ✅ Fetch hubs
+  const fetchHubs = async (user) => {
+    try {
+      await user.reload();
+      const token = await user.getIdToken(true);
+      const [hubsRes, managersRes] = await Promise.all([
+        fetch(`${API_BASE}/api/hubs`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        fetch(`${API_BASE}/api/hub-managers`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+
+      if (hubsRes.ok) {
+        const hubsData = await hubsRes.json();
+        setHubs(hubsData.hubs || []);
+      }
+
+      if (managersRes.ok) {
+        const managersData = await managersRes.json();
+        setHubManagers(managersData.managers || []);
+      }
+    } catch (err) {
+      console.error("❌ Fetch hubs error:", err);
+      toast.error("Failed to load hubs");
+    }
+  };
+
   // ✅ Fetch orders (placeholder - you'll need to implement this endpoint)
   const fetchOrders = async (user) => {
     try {
       await user.reload();
       const token = await user.getIdToken(true);
-      const res = await fetch("http://localhost:5000/api/admin/orders", {
+      const res = await fetch(`${API_BASE}/api/admin/orders`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -239,11 +470,12 @@ export default function AdminDashboard() {
     }
   };
 
-  const fetchDeliveryAgents = async (user, filterStatus = "all") => {
+  // ✅ Fetch pending hub orders for admin approval
+  const fetchPendingHubOrders = async (user) => {
     try {
       await user.reload();
       const token = await user.getIdToken(true);
-      const res = await fetch(`http://localhost:5000/api/delivery?status=${filterStatus}`, {
+      const res = await fetch(`${API_BASE}/api/admin/orders/hub-orders/pending`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -254,152 +486,150 @@ export default function AdminDashboard() {
 
       const data = await res.json();
       if (data.success) {
-        setDeliveryAgents(data.agents || []);
-      } else {
-        console.error("Fetch delivery agents error:", data.error);
-        setDeliveryAgents([]);
+        setPendingHubOrders(data.orders || []);
+        console.log(`✅ Fetched ${data.orders.length} pending hub orders`);
       }
     } catch (err) {
-      console.error("Fetch delivery agents error:", err);
-      setDeliveryAgents([]);
+      console.error("Fetch pending hub orders error:", err);
+      setPendingHubOrders([]);
     }
   };
 
-  // ✅ Handle section navigation
-  const handleSectionClick = async (section) => {
-    setActiveSection(section);
-    const user = auth.currentUser;
-    
-    if (user) {
-      if (section === "products") {
-        await fetchProducts(user);
-      } else if (section === "orders") {
-        await fetchOrders(user);
-      } else if (section === "delivery") {
-        await fetchDeliveryAgents(user, deliveryFilter);
+  // ✅ Fetch approved hub orders
+  const fetchApprovedHubOrders = async (user) => {
+    try {
+      await user.reload();
+      const token = await user.getIdToken(true);
+      const res = await fetch(`${API_BASE}/api/admin/orders/approved-hub-orders`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
       }
+
+      const data = await res.json();
+      if (data.success) {
+        setApprovedHubOrders(data.orders || []);
+        console.log(`✅ Fetched ${data.orders.length} approved hub orders`);
+      }
+    } catch (err) {
+      console.error("Fetch approved hub orders error:", err);
+      setApprovedHubOrders([]);
     }
   };
 
-  useEffect(() => {
-    const unsub = auth.onAuthStateChanged(async (user) => {
-      if (user) {
-        // Fetch both products and orders on initial load
-        await fetchProducts(user);
-        await fetchOrders(user); // This will populate the stats
+  // ✅ Fetch admin notifications
+  const fetchAdminNotifications = async (user) => {
+    try {
+      await user.reload();
+      const token = await user.getIdToken(true);
+      const res = await fetch(`${API_BASE}/api/admin/orders/notifications?unreadOnly=true`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
       }
+
+      const data = await res.json();
+      if (data.success) {
+        setAdminNotifications(data.notifications || []);
+        setUnreadNotificationCount(data.unreadCount || 0);
+        console.log(`✅ Fetched ${data.notifications.length} admin notifications`);
+      }
+    } catch (err) {
+      console.error("Fetch admin notifications error:", err);
+      setAdminNotifications([]);
+      setUnreadNotificationCount(0);
+    }
+  };
+
+  // ✅ Approve hub order for delivery
+  const approveHubOrder = async (orderId) => {
+    const confirmed = await confirm({
+      title: 'Approve Hub Order',
+      message: 'Are you sure you want to approve this order for delivery to customer hub?',
+      type: 'success',
+      confirmText: 'Approve & Dispatch'
     });
-    return () => unsub();
-  }, []);
-
-  // ✅ Add / Edit Product
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    const trimmedTitle = (form.title || "").trim();
-    if (!trimmedTitle || !form.category || !form.stock) {
-      setErrors((prev) => ({ ...prev, title: !trimmedTitle ? "Title is required" : prev.title }));
-      return;
-    }
-
-    if (trimmedTitle.length < 3) {
-      setErrors((prev) => ({ ...prev, title: "Title must be at least 3 characters" }));
-      return;
-    }
-
-    // Letters and spaces only
-    if (!/^[A-Za-z\s]+$/.test(trimmedTitle)) {
-      setErrors((prev) => ({ ...prev, title: "Title can contain letters and spaces only" }));
-      return;
-    }
-
-    // Clear title error if valid
-    if (errors.title) setErrors((prev) => ({ ...prev, title: "" }));
-
-    if (!selectedFile && !editingId) {
-      toast.error("Please select an image");
-      return;
-    }
-
-    // Validate variants
-    for (let i = 0; i < form.variants.length; i++) {
-      const variant = form.variants[i];
-      if (!variant.weight || !variant.price) {
-        toast.error(`Please fill in weight and price for variant ${i + 1}`);
+    
+    if (!confirmed) return;
+    
+    try {
+      const user = auth.currentUser;
+      const token = await user.getIdToken(true);
+      
+      const res = await fetch(`${API_BASE}/api/admin/orders/${orderId}/approve-hub-delivery`, {
+        method: "PATCH",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+      });
+      
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
         return;
       }
       
-      const price = parseFloat(variant.price);
-      if (isNaN(price) || price < 1 || price > 2000) {
-        toast.error(`Price for variant ${i + 1} must be between ₹1 and ₹2,000`);
-        return;
-      }
-    }
-
-
-    try {
-      setLoading(true);
-      const token = await auth.currentUser.getIdToken();
-
-      const url = editingId
-        ? `http://localhost:5000/api/admin/products/${editingId}`
-        : "http://localhost:5000/api/admin/products";
-
-      const method = editingId ? "PUT" : "POST";
-
-      const formData = new FormData();
-      formData.append("title", trimmedTitle);
-      formData.append("category", form.category);
-      formData.append("stock", form.stock);
-      formData.append("variants", JSON.stringify(form.variants));
-
-      if (selectedFile) {
-        formData.append("image", selectedFile);
-      }
-
-      // Debug logging
-      console.log("Form data being sent:");
-      console.log("Title:", form.title);
-      console.log("Variants:", form.variants);
-      console.log("Selected file:", selectedFile?.name);
-
-      const response = await fetch(url, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
-
-      if (response.ok) {
-        toast.success(editingId ? "Product updated!" : "Product added!");
-        setForm({ title: "", category: "", stock: "", price: "", variants: [{ weight: "", price: "" }], image: null });
-        setSelectedFile(null);
-        setCurrentImageUrl(null);
-        setEditingId(null);
-        fetchProducts(auth.currentUser);
+      const data = await res.json();
+      if (data.success) {
+        toast.success(`Order approved and dispatched to ${data.order.toHub}`);
+        // Refresh pending orders and approved orders
+        fetchPendingHubOrders(user);
+        fetchApprovedHubOrders(user);
+        fetchAdminNotifications(user);
       } else {
-        let errorMessage = "Failed to save product";
-        try {
-          const error = await response.json();
-          errorMessage = error.error || errorMessage;
-          console.error("Server error:", error);
-        } catch (parseError) {
-          console.error("Could not parse error response:", parseError);
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        console.error("Response status:", response.status);
-        toast.error(errorMessage);
+        toast.error(data.error || "Failed to approve order");
       }
-    } catch (error) {
-      console.error("Submit error:", error);
-      toast.error("Failed to save product");
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      console.error("Approve hub order error:", err);
+      toast.error("Failed to approve order");
     }
   };
 
-  // ✅ Toggle Product Status (Disable/Enable)
+  // ✅ Mark admin notification as read
+  const markAdminNotificationAsRead = async (notificationId) => {
+    try {
+      const user = auth.currentUser;
+      const token = await user.getIdToken(true);
+      
+      const res = await fetch(`${API_BASE}/api/admin/orders/notifications/${notificationId}/read`, {
+        method: "PATCH",
+        headers: { 
+          Authorization: `Bearer ${token}` 
+        },
+      });
+      
+      if (res.ok) {
+        // Remove from unread notifications
+        setAdminNotifications(prev => prev.filter(n => n._id !== notificationId));
+        setUnreadNotificationCount(prev => Math.max(0, prev - 1));
+        toast.success("Notification marked as read");
+      }
+    } catch (err) {
+      console.error("Mark notification as read error:", err);
+    }
+  };
+
+  // ✅ View hub order details
+  const viewHubOrderDetails = (order) => {
+    setSelectedHubOrder(order);
+    setShowHubOrderModal(true);
+  };
+
+  // ✅ Close hub order modal
+  const closeHubOrderModal = () => {
+    setSelectedHubOrder(null);
+    setShowHubOrderModal(false);
+  };
+
+  // Note: Seller management functions removed - sellers register themselves
+
+  // ✅ Toggle product status (disable/enable)
   const toggleProductStatus = async (id, isCurrentlyActive) => {
     const action = isCurrentlyActive ? "disable" : "enable";
     
@@ -413,58 +643,120 @@ export default function AdminDashboard() {
     if (!confirmed) return;
     
     try {
-      console.log("🔄 Toggling product:", id, "Currently active:", isCurrentlyActive);
-      
-      // Force refresh token to ensure it's valid
-      const token = await auth.currentUser.getIdToken(true);
+      const user = auth.currentUser;
+      const token = await user.getIdToken(true);
       
       const res = await fetch(`http://localhost:5000/api/admin/products/toggle-status/${id}`, {
         method: "PATCH",
         headers: { 
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
         },
       });
       
-      console.log("Response status:", res.status);
-      
-      if (res.status === 401) {
-        toast.error("Your session expired. Please logout and login again.");
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
         return;
       }
       
-      if (res.ok) {
-        const data = await res.json();
-        console.log("✅ Success:", data);
+      const data = await res.json();
+      if (data.success) {
         toast.success(data.message);
-        await fetchProducts(auth.currentUser);
+        fetchProducts(user);
       } else {
-        const errorText = await res.text();
-        console.error("❌ Error response:", errorText);
-        toast.error(`Failed to ${action} product`);
+        toast.error(data.error || `Failed to ${action} product`);
       }
     } catch (err) {
-      console.error("❌ Toggle status error:", err);
-      
-      if (err.message && err.message.includes('network')) {
-        toast.error("Network error. Please check your internet connection.");
-      } else {
-        toast.error("Failed to update product status. Please try again.");
-      }
+      console.error(`Toggle product status error:`, err);
+      toast.error(`Failed to ${action} product`);
     }
   };
 
-  // ✅ Edit Product
-  const startEdit = (p) => {
-    setForm({ 
-      title: p.title, 
-      category: p.category || "", 
-      stock: p.stock || "",
-      price: p.price || "", 
-      variants: p.variants || [{ weight: "", price: "" }],
-      image: null
+  // ✅ Approve product
+  const approveProduct = async (id) => {
+    const confirmed = await confirm({
+      title: 'Approve Product',
+      message: 'Are you sure you want to approve this product? It will be visible to customers.',
+      type: 'success',
+      confirmText: 'Approve'
     });
-    setSelectedFile(null);
+    
+    if (!confirmed) return;
+    
+    try {
+      const user = auth.currentUser;
+      const token = await user.getIdToken(true);
+      
+      const res = await fetch(`http://localhost:5000/api/admin/products/approve/${id}`, {
+        method: "PATCH",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+      });
+      
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
+      }
+      
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Product approved successfully!");
+        fetchProducts(user);
+      } else {
+        toast.error(data.error || "Failed to approve product");
+      }
+    } catch (err) {
+      console.error("Approve product error:", err);
+      toast.error("Failed to approve product");
+    }
+  };
+
+  // ✅ Reject product
+  const rejectProduct = async (id) => {
+    const confirmed = await confirm({
+      title: 'Reject Product',
+      message: 'Are you sure you want to reject this product? It will not be visible to customers.',
+      type: 'warning',
+      confirmText: 'Reject'
+    });
+    
+    if (!confirmed) return;
+    
+    try {
+      const user = auth.currentUser;
+      const token = await user.getIdToken(true);
+      
+      const res = await fetch(`http://localhost:5000/api/admin/products/reject/${id}`, {
+        method: "PATCH",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({ reason: "Product does not meet quality standards" })
+      });
+      
+      if (res.status === 403) {
+        toast.error("Access denied: You are not an admin");
+        return;
+      }
+      
+      const data = await res.json();
+      if (data.success) {
+        toast.success("Product rejected successfully!");
+        fetchProducts(user);
+      } else {
+        toast.error(data.error || "Failed to reject product");
+      }
+    } catch (err) {
+      console.error("Reject product error:", err);
+      toast.error("Failed to reject product");
+    }
+  };
+
+  // ✅ Start editing a product
+  const startEdit = (p) => {
     setEditingId(p._id);
     
     // Set current image URL for display
@@ -477,17 +769,56 @@ export default function AdminDashboard() {
     }
   };
 
-  // ✅ View Order Details
+  // ✅ View order details
   const viewOrderDetails = (order) => {
     setSelectedOrder(order);
     setShowOrderModal(true);
   };
 
-  // ✅ Close Order Modal
+  // ✅ Close order modal
   const closeOrderModal = () => {
     setSelectedOrder(null);
     setShowOrderModal(false);
   };
+
+  // ✅ Handle section navigation
+  const handleSectionClick = async (section) => {
+    setActiveSection(section);
+    const user = auth.currentUser;
+    
+    if (user) {
+      if (section === "sellers") {
+        await fetchApprovedSellers(user);
+      }
+      if (section === "products") {
+        await fetchProducts(user);
+      } else if (section === "orders") {
+        await fetchOrders(user);
+      } else       if (section === "sellers") {
+        await fetchApprovedSellers(user);
+      } else if (section === "hubs") {
+        await fetchHubs(user);
+      } else if (section === "hub-orders") {
+        await fetchPendingHubOrders(user);
+        await fetchApprovedHubOrders(user);
+        await fetchAdminNotifications(user);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const unsub = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        // Fetch initial data
+        await fetchOrders(user);
+        await fetchProducts(user);
+        await fetchPendingApplications(user);
+        await fetchDeliveryAgents(user);
+        await fetchAdminNotifications(user);
+      }
+    });
+    return () => unsub();
+  }, []);
 
   // ✅ Logout
   const handleLogout = async () => {
@@ -496,205 +827,6 @@ export default function AdminDashboard() {
     // Clear browser history and navigate to login
     window.history.replaceState(null, '', '/login');
     navigate("/login", { replace: true });
-  };
-
-  // Delivery Management Functions
-  const handleDeliverySubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    try {
-      console.log("=== SUBMITTING DELIVERY FORM ===");
-      console.log("Form data:", deliveryForm);
-      
-      const user = auth.currentUser;
-      const token = await user.getIdToken();
-
-      const url = editingDeliveryId 
-        ? `http://localhost:5000/api/delivery/${editingDeliveryId}`
-        : "http://localhost:5000/api/delivery";
-      
-      const method = editingDeliveryId ? "PUT" : "POST";
-
-      console.log("Request URL:", url);
-      console.log("Request method:", method);
-
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(deliveryForm),
-      });
-
-      console.log("Response status:", res.status);
-      const data = await res.json();
-      console.log("Response data:", data);
-
-      if (res.ok && data.success) {
-        toast.success(editingDeliveryId ? "Delivery agent updated!" : "Delivery agent created!");
-        setShowDeliveryModal(false);
-        setEditingDeliveryId(null);
-        setDeliveryForm({
-          name: "",
-          phone: "",
-          email: "",
-          username: "",
-          password: "",
-          address: { street: "", city: "", state: "", pincode: "" },
-          vehicleInfo: { type: "", number: "" }
-        });
-        await fetchDeliveryAgents(user, deliveryFilter);
-      } else {
-        toast.error(data.error || "Failed to save delivery agent");
-      }
-    } catch (err) {
-      console.error("Delivery agent save error:", err);
-      toast.error("Error saving delivery agent");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDeliveryStatusUpdate = async (agentId, newStatus) => {
-    try {
-      const user = auth.currentUser;
-      const token = await user.getIdToken();
-
-      const res = await fetch(`http://localhost:5000/api/delivery/${agentId}/status`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ status: newStatus }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        toast.success(`Agent ${newStatus}!`);
-        await fetchDeliveryAgents(user, deliveryFilter);
-      } else {
-        toast.error(data.error || "Failed to update status");
-      }
-    } catch (err) {
-      console.error("Status update error:", err);
-      toast.error("Error updating status");
-    }
-  };
-
-  const deleteDeliveryAgent = async (agentId) => {
-    const confirmed = await confirm({
-      title: 'Delete Delivery Agent',
-      message: 'Are you sure you want to delete this delivery agent? This action cannot be undone.',
-      type: 'danger',
-      confirmText: 'Delete'
-    });
-    
-    if (!confirmed) return;
-    
-    try {
-      const user = auth.currentUser;
-      const token = await user.getIdToken();
-
-      const res = await fetch(`http://localhost:5000/api/delivery/${agentId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        toast.success("Delivery agent deleted!");
-        await fetchDeliveryAgents(user, deliveryFilter);
-      } else {
-        toast.error(data.error || "Failed to delete agent");
-      }
-    } catch (err) {
-      console.error("Delete error:", err);
-      toast.error("Error deleting agent");
-    }
-  };
-
-  const editDeliveryAgent = (agent) => {
-    setDeliveryForm({
-      name: agent.name,
-      phone: agent.phone,
-      email: agent.email,
-      username: agent.username,
-      password: "", // Don't pre-fill password
-      address: agent.address || { street: "", city: "", state: "", pincode: "" },
-      vehicleInfo: agent.vehicleInfo || { type: "", number: "" }
-    });
-    setEditingDeliveryId(agent.agentId);
-    setShowDeliveryModal(true);
-  };
-
-  // Fetch available delivery agents for assignment
-  const fetchAvailableAgents = async () => {
-    try {
-      const user = auth.currentUser;
-      const token = await user.getIdToken();
-      
-      const res = await fetch("http://localhost:5000/api/admin/orders/delivery-agents/available", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setAvailableAgents(data.agents || []);
-        }
-      }
-    } catch (err) {
-      console.error("Error fetching available agents:", err);
-    }
-  };
-
-  // Assign delivery agent to order
-  const handleAssignDelivery = async (orderId, agentId) => {
-    try {
-      console.log("=== ASSIGNING DELIVERY ===");
-      console.log("Order ID:", orderId);
-      console.log("Agent ID:", agentId);
-      
-      const user = auth.currentUser;
-      const token = await user.getIdToken();
-
-      const res = await fetch(`http://localhost:5000/api/admin/orders/${orderId}/assign-delivery`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ agentId }),
-      });
-
-      console.log("Assignment response status:", res.status);
-      const data = await res.json();
-      console.log("Assignment response data:", data);
-
-      if (res.ok && data.success) {
-        toast.success(`Order assigned to ${agentId}!`);
-        setShowAssignModal(false);
-        setSelectedOrderForAssignment(null);
-        await fetchOrders(user); // Refresh orders
-      } else {
-        toast.error(data.error || "Failed to assign delivery agent");
-      }
-    } catch (err) {
-      console.error("Assignment error:", err);
-      toast.error("Error assigning delivery agent");
-    }
-  };
-
-  // Open assignment modal
-  const openAssignModal = async (order) => {
-    setSelectedOrderForAssignment(order);
-    await fetchAvailableAgents();
-    setShowAssignModal(true);
   };
 
   return (
@@ -727,10 +859,22 @@ export default function AdminDashboard() {
             🧾 Orders
           </button>
           <button 
+            onClick={() => handleSectionClick("sellers")} 
+            style={{...linkStyle, ...(activeSection === "sellers" ? activeLinkStyle : {})}}
+          >
+            🛍️ Sellers
+          </button>
+          <button 
             onClick={() => handleSectionClick("delivery")} 
             style={{...linkStyle, ...(activeSection === "delivery" ? activeLinkStyle : {})}}
           >
             🚚 Delivery Boys
+          </button>
+          <button 
+            onClick={() => navigate("/admin/hub-management")} 
+            style={{...linkStyle, ...(activeSection === "hubs" ? activeLinkStyle : {})}}
+          >
+            🏢 Hubs
           </button>
           <button 
             onClick={() => handleSectionClick("settings")} 
@@ -839,339 +983,640 @@ export default function AdminDashboard() {
                 </div>
               </div>
             </div>
+
+            <SalesPredictionDashboard />
           </>
         )}
 
         {/* Products Section */}
         {activeSection === "products" && (
           <>
-            <h1 style={{ marginBottom: "20px" }}>Product Management</h1>
+            <h1 style={{ marginBottom: "20px" }}>Product Management & Approval</h1>
+            
+            {/* Info Message */}
+            <div style={{ 
+              background: "#fff8e6", 
+              border: "1px solid #ffd54f", 
+              borderRadius: "8px",
+              padding: "15px",
+              marginBottom: "20px"
+            }}>
+              <p style={{ margin: 0, color: "#5c4033" }}>
+                <strong>ℹ️ Admin Product Controls:</strong> Review and approve/reject products added by sellers. 
+                Monitor product details, stock levels, and enable/disable products as needed.
+              </p>
+            </div>
 
-            {/* Add/Edit Product Form */}
-            <section style={{ background: "#fff", padding: "24px", borderRadius: "12px", marginBottom: "30px" }}>
-              <h2 style={{ marginBottom: "20px" }}>{editingId ? "Edit Product" : "Add New Product"}</h2>
-              <form onSubmit={handleSubmit} style={{ display: "grid", gap: "16px" }}>
-                <div>
-                  <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                    Product Title *
-                  </label>
-                  <input 
-                    placeholder="Enter product title" 
-                    value={form.title} 
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setForm({ ...form, title: value });
-                      // Live validation feedback
-                      const t = (value || '').trim();
-                      if (!t) {
-                        setErrors((prev) => ({ ...prev, title: "Title is required" }));
-                      } else if (t.length < 3) {
-                        setErrors((prev) => ({ ...prev, title: "Title must be at least 3 characters" }));
-                      } else if (!/^[A-Za-z\s]+$/.test(t)) {
-                        setErrors((prev) => ({ ...prev, title: "Title can contain letters and spaces only" }));
-                      } else {
-                        setErrors((prev) => ({ ...prev, title: "" }));
-                      }
-                    }} 
-                    style={inputStyle}
-                    required
-                  />
-                  {errors.title && (
-                    <div style={{ color: "#d9534f", fontSize: "12px", marginTop: "6px" }}>{errors.title}</div>
-                  )}
-                </div>
+            {/* Filter Tabs */}
+            <div style={{ marginBottom: "20px", display: "flex", gap: "10px" }}>
+              {["All", "Pending", "Approved", "Rejected"].map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setSelectedCategory(filter)}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    border: "2px solid #5c4033",
+                    background: selectedCategory === filter ? "#5c4033" : "white",
+                    color: selectedCategory === filter ? "white" : "#5c4033",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    transition: "all 0.3s ease"
+                  }}
+                >
+                  {filter} {filter === "Pending" && products.filter(p => p.approvalStatus === "pending").length > 0 && 
+                    `(${products.filter(p => p.approvalStatus === "pending").length})`}
+                </button>
+              ))}
+            </div>
 
-                <div>
-                  <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                    Category *
-                  </label>
-                  <select 
-                    value={form.category} 
-                    onChange={(e) => setForm({ ...form, category: e.target.value })} 
-                    style={inputStyle}
-                    required
-                  >
-                    <option value="">Select Category</option>
-                    <option value="Snacks">Snacks</option>
-                    <option value="Cakes">Cakes</option>
-                    <option value="Pickles">Pickles</option>
-                    <option value="Powders">Powders</option>
-                    <option value="Spices">Spices</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                    Stock Available *
-                  </label>
-                  <input 
-                    type="number"
-                    min="0"
-                    placeholder="Enter stock quantity" 
-                    value={form.stock} 
-                    onChange={(e) => setForm({ ...form, stock: e.target.value })} 
-                    style={inputStyle}
-                    required
-                  />
-                </div>
-
-
-                {/* Variants */}
-                <div>
-                  <h4 style={{ marginBottom: "10px", fontWeight: "600" }}>Variants (Weight + Price)</h4>
-                  <p style={{ fontSize: "12px", color: "#666", marginBottom: "15px" }}>
-                    💡 Price must be between ₹1 and ₹2,000. Use decimal values for precise pricing (e.g., 299.99)
-                  </p>
-                  {form.variants.map((v, i) => (
-                    <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-                      <input
-                        type="text"
-                        placeholder="Weight (e.g. 100g)"
-                        value={v.weight}
-                        onChange={(e) => {
-                          const updated = [...form.variants];
-                          updated[i].weight = e.target.value;
-                          setForm({ ...form, variants: updated });
-                        }}
-                        style={{ ...inputStyle, flex: 1 }}
-                      />
-                      <input
-                        type="number"
-                        placeholder="Price (₹)"
-                        min="1"
-                        max="2000"
-                        step="0.01"
-                        value={v.price}
-                        onChange={(e) => {
-                          const updated = [...form.variants];
-                          updated[i].price = e.target.value;
-                          setForm({ ...form, variants: updated });
-                        }}
-                        style={{ ...inputStyle, flex: 1 }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setForm({
-                            ...form,
-                            variants: form.variants.filter((_, idx) => idx !== i),
-                          });
-                        }}
-                        style={{ ...buttonPrimary, background: "#dc3545", padding: "8px 12px" }}
-                      >
-                        X
-                      </button>
-                    </div>
-                  ))}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setForm({ ...form, variants: [...form.variants, { weight: "", price: "" }] })
-                    }
-                    style={{ ...buttonPrimary, background: "#5c4033", padding: "8px 16px" }}
-                  >
-                    + Add Variant
-                  </button>
-                </div>
-
-                <div>
-                  <label style={{ display: "block", marginBottom: "5px", fontSize: "14px", fontWeight: "500" }}>
-                    Product Image {!editingId ? "*" : ""}
-                  </label>
-                  
-                  {/* Current Image Display (when editing) */}
-                  {editingId && currentImageUrl && (
-                    <div style={{ marginBottom: "15px" }}>
-                      <p style={{ fontSize: "12px", color: "#666", marginBottom: "8px" }}>Current Image:</p>
-                      <img 
-                        src={currentImageUrl} 
-                        alt="Current product" 
-                        style={{ 
-                          maxHeight: "150px", 
-                          maxWidth: "200px", 
-                          objectFit: "cover", 
-                          borderRadius: "6px",
-                          border: "1px solid #ddd"
-                        }} 
-                      />
-                    </div>
-                  )}
-                  
-                  <input 
-                    type="file" 
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        // Validate file type only
-                        if (!file.type.startsWith('image/')) {
-                          toast.error("Please select only image files (JPG, PNG, GIF, etc.)");
-                          e.target.value = '';
-                          return;
-                        }
-                        setSelectedFile(file);
-                        setCurrentImageUrl(null); // Clear current image when new one is selected
-                        toast.success("Image selected successfully!");
-                      }
-                    }} 
-                    style={{ ...inputStyle, padding: "10px", border: "1px dashed #ccc" }} 
-                    required={!editingId}
-                  />
-                  <p style={{ fontSize: "12px", color: "#666", marginTop: "5px" }}>
-                    {editingId ? "Select a new image to replace the current one (optional)" : "Only image files allowed (JPG, PNG, GIF, etc.)"}
-                  </p>
-                </div>
-                <div>
-                  <button disabled={loading} style={buttonPrimary}>
-                    {loading ? "Saving..." : editingId ? "Update Product" : "Add Product"}
-                  </button>
-                  {editingId && (
-                    <button
-                      type="button"
-                      onClick={() => { setEditingId(null); setForm({ title: "", category: "", stock: "", price: "", variants: [{ weight: "", price: "" }], image: null }); setSelectedFile(null); setCurrentImageUrl(null); }}
-                      style={buttonSecondary}
-                    >
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </form>
-            </section>
-
-            {/* Product List */}
-            <section>
-              <h2 style={{ marginBottom: "20px" }}>Products ({products.length})</h2>
+            {/* Products Grid */}
+            <div style={{ background: "#fff", padding: "24px", borderRadius: "12px" }}>
+              <h2 style={{ marginBottom: "20px" }}>
+                All Products ({products.filter(p => {
+                  if (selectedCategory === "All") return true;
+                  if (selectedCategory === "Pending") return p.approvalStatus === "pending";
+                  if (selectedCategory === "Approved") return p.approvalStatus === "approved";
+                  if (selectedCategory === "Rejected") return p.approvalStatus === "rejected";
+                  return true;
+                }).length})
+              </h2>
               
-              {/* Category Filter */}
-              <div style={{ marginBottom: "20px" }}>
-                <h3 style={{ marginBottom: "10px", fontSize: "16px", color: "#5c4033" }}>Filter by Category:</h3>
-                <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                  {["All", "Snacks", "Cakes", "Pickles", "Powders", "Spices"].map((category) => (
-                    <button
-                      key={category}
-                      onClick={() => setSelectedCategory(category)}
-                      style={{
-                        padding: "8px 16px",
-                        borderRadius: "20px",
-                        border: "2px solid #5c4033",
-                        background: selectedCategory === category ? "#5c4033" : "white",
-                        color: selectedCategory === category ? "white" : "#5c4033",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                        fontWeight: "600",
-                        transition: "all 0.3s ease"
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selectedCategory !== category) {
-                          e.target.style.background = "#f5f5f5";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selectedCategory !== category) {
-                          e.target.style.background = "white";
-                        }
-                      }}
-                    >
-                      {category}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: "20px" }}>
-                {products.length === 0 ? (
-                  <p>No products found. Add your first product!</p>
-                ) : (
-                  products
-                    .filter((p) => selectedCategory === "All" || p.category === selectedCategory)
-                    .map((p) => (
-                    <div key={p._id} style={{ 
-                      background: "#fff", 
-                      padding: "16px", 
-                      borderRadius: "8px", 
-                      textAlign: "center",
-                      opacity: p.isActive === false ? 0.6 : 1,
-                      border: p.isActive === false ? "2px solid #dc3545" : "1px solid #eee",
-                      position: "relative"
-                    }}>
-                      {/* Disabled Badge */}
-                      {p.isActive === false && (
-                        <div style={{
-                          position: "absolute",
-                          top: "8px",
-                          right: "8px",
-                          background: "#dc3545",
-                          color: "white",
-                          padding: "4px 8px",
-                          borderRadius: "4px",
-                          fontSize: "10px",
-                          fontWeight: "bold"
-                        }}>
-                          DISABLED
-                        </div>
-                      )}
+              {products.length === 0 ? (
+                <p style={{ textAlign: "center", padding: "40px", color: "#666" }}>
+                  No products found. Sellers have not added any products yet.
+                </p>
+              ) : (
+                <div style={{ 
+                  display: "grid", 
+                  gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", 
+                  gap: "20px" 
+                }}>
+                  {products
+                    .filter(p => {
+                      // Exclude test products
+                      if (p.title && p.title.toLowerCase().includes("test product")) return false;
+                      if (selectedCategory === "All") return true;
+                      if (selectedCategory === "Pending") return p.approvalStatus === "pending";
+                      if (selectedCategory === "Approved") return p.approvalStatus === "approved";
+                      if (selectedCategory === "Rejected") return p.approvalStatus === "rejected";
+                      return true;
+                    })
+                    .map((p) => {
+                      const priceRange = p.variants && p.variants.length > 0
+                        ? `₹${Math.min(...p.variants.map(v => v.price))} - ₹${Math.max(...p.variants.map(v => v.price))}`
+                        : "N/A";
+                      const dateAdded = p.createdAt ? new Date(p.createdAt).toLocaleDateString('en-IN') : "N/A";
                       
-                      {p.image ? (
-  // For new products uploaded via multer
-  <img
-    src={`http://localhost:5000/uploads/${p.image}`}
-    alt={p.title}
-    style={{ maxHeight: "120px", width: "100%", objectFit: "cover", borderRadius: "6px" }}
-  />
-) : p.img ? (
-  // For old products already in DB
-  <img
-    src={`/images/products/${p.img}`}
-    alt={p.title}
-    style={{ maxHeight: "120px", width: "100%", objectFit: "cover", borderRadius: "6px" }}
-  />
-) : (
-  // If no image at all
-  <div
-    style={{
-      height: "120px",
-      background: "#f0f0f0",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      borderRadius: "6px",
-    }}
-  >
-    No Image
-  </div>
-)}
-
-                      <h3>{p.title}</h3>
-                      <p style={{ fontSize: "14px", color: "#666" }}>Category: {p.category || "General"}</p>
-                      <p style={{ fontSize: "14px", color: "#5c4033", fontWeight: "600" }}>Stock: {p.stock || "0"}</p>
-                      {p.variants && p.variants.length > 0 && (
-                        <div style={{ marginTop: "8px" }}>
-                          <h4 style={{ fontSize: "12px", fontWeight: "600", marginBottom: "4px" }}>Variants:</h4>
-                          {p.variants.map((v, idx) => (
-                            <p key={idx} style={{ fontSize: "12px", color: "#555" }}>
-                              {v.weight} — ₹{v.price}
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                      
-                      <div style={{ marginTop: "10px", display: "flex", gap: "10px", justifyContent: "center" }}>
-                        <button onClick={() => startEdit(p)} style={{ ...buttonPrimary, background: "#543737" }}>Edit</button>
-                        <button 
-                          onClick={() => toggleProductStatus(p._id, p.isActive !== false)} 
-                          style={{ 
-                            ...buttonPrimary, 
-                            background: p.isActive === false ? "#28a745" : "#ffc107",
-                            color: p.isActive === false ? "#fff" : "#000"
+                      return (
+                        <div 
+                          key={p._id} 
+                          onClick={() => setSelectedOrder(p)}
+                          style={{
+                            border: "1px solid #ddd",
+                            borderRadius: "12px",
+                            overflow: "hidden",
+                            cursor: "pointer",
+                            transition: "all 0.3s ease",
+                            background: "#fff"
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-4px)";
+                            e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.1)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "none";
                           }}
                         >
-                          {p.isActive === false ? "Enable" : "Disable"}
-                        </button>
+                          {/* Product Image */}
+                          <div style={{ position: "relative", paddingTop: "100%", background: "#f5f5f5" }}>
+                            {p.image ? (
+                              <img
+                                src={`http://localhost:5000/uploads/${p.image}`}
+                                alt={p.title}
+                                style={{ 
+                                  position: "absolute", 
+                                  top: 0, 
+                                  left: 0, 
+                                  width: "100%", 
+                                  height: "100%", 
+                                  objectFit: "cover" 
+                                }}
+                              />
+                            ) : p.img ? (
+                              <img
+                                src={`/images/products/${p.img}`}
+                                alt={p.title}
+                                style={{ 
+                                  position: "absolute", 
+                                  top: 0, 
+                                  left: 0, 
+                                  width: "100%", 
+                                  height: "100%", 
+                                  objectFit: "cover" 
+                                }}
+                              />
+                            ) : (
+                              <div style={{ 
+                                position: "absolute", 
+                                top: 0, 
+                                left: 0, 
+                                width: "100%", 
+                                height: "100%", 
+                                display: "flex", 
+                                alignItems: "center", 
+                                justifyContent: "center",
+                                fontSize: "14px",
+                                color: "#999"
+                              }}>
+                                No Image
+                              </div>
+                            )}
+                            
+                            {/* Approval Badge */}
+                            <div style={{ position: "absolute", top: "10px", right: "10px" }}>
+                              <span style={{
+                                padding: "6px 12px",
+                                borderRadius: "20px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                background: 
+                                  p.approvalStatus === "approved" ? "#28a745" :
+                                  p.approvalStatus === "rejected" ? "#dc3545" :
+                                  "#ffc107",
+                                color: "white",
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
+                              }}>
+                                {p.approvalStatus === "approved" ? "✓ Approved" :
+                                 p.approvalStatus === "rejected" ? "✗ Rejected" :
+                                 "⏳ Pending"}
+                              </span>
+                            </div>
+                            
+                            {/* Stock Badge */}
+                            <div style={{ position: "absolute", top: "10px", left: "10px" }}>
+                              <span style={{
+                                padding: "6px 12px",
+                                borderRadius: "20px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                background: p.stock > 10 ? "#28a745" : p.stock > 0 ? "#ffc107" : "#dc3545",
+                                color: "white",
+                                boxShadow: "0 2px 8px rgba(0,0,0,0.2)"
+                              }}>
+                                Stock: {p.stock || 0}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Product Info */}
+                          <div style={{ padding: "16px" }}>
+                            {/* Product Name */}
+                            <h3 style={{ 
+                              margin: "0 0 8px 0", 
+                              fontSize: "16px", 
+                              fontWeight: "600", 
+                              color: "#5c4033",
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap"
+                            }}>
+                              {p.title}
+                            </h3>
+                            
+                            {/* Seller */}
+                            <div style={{ marginBottom: "8px" }}>
+                              <div style={{ fontSize: "13px", color: "#666", fontWeight: "500" }}>
+                                🏪 {p.sellerName || "Unknown"}
+                              </div>
+                            </div>
+                            
+                            {/* Category & Price */}
+                            <div style={{ 
+                              display: "flex", 
+                              justifyContent: "space-between", 
+                              alignItems: "center",
+                              marginBottom: "12px"
+                            }}>
+                              <span style={{ fontSize: "12px", color: "#666" }}>
+                                {p.mainCategory || p.category || "N/A"}
+                              </span>
+                              <span style={{ fontSize: "14px", fontWeight: "700", color: "#5c4033" }}>
+                                {priceRange}
+                              </span>
+                            </div>
+                            
+                            {/* Status Badge */}
+                            <div style={{ marginBottom: "12px" }}>
+                              <span style={{
+                                padding: "4px 10px",
+                                borderRadius: "12px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                background: p.isActive === false ? "#ffebee" : "#e8f5e9",
+                                color: p.isActive === false ? "#c62828" : "#2e7d32"
+                              }}>
+                                {p.isActive === false ? "🔴 Disabled" : "🟢 Active"}
+                              </span>
+                            </div>
+                            
+                            {/* Date */}
+                            <div style={{ fontSize: "11px", color: "#999", marginBottom: "12px" }}>
+                              Added: {dateAdded}
+                            </div>
+                            
+                            {/* Action Buttons */}
+                            <div style={{ display: "flex", gap: "8px", flexDirection: "column" }}>
+                              {p.approvalStatus === "pending" && (
+                                <div style={{ display: "flex", gap: "8px" }}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      approveProduct(p._id);
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      padding: "8px",
+                                      fontSize: "12px",
+                                      fontWeight: "600",
+                                      border: "none",
+                                      borderRadius: "6px",
+                                      cursor: "pointer",
+                                      background: "#28a745",
+                                      color: "white"
+                                    }}
+                                  >
+                                    ✓ Approve
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      rejectProduct(p._id);
+                                    }}
+                                    style={{
+                                      flex: 1,
+                                      padding: "8px",
+                                      fontSize: "12px",
+                                      fontWeight: "600",
+                                      border: "none",
+                                      borderRadius: "6px",
+                                      cursor: "pointer",
+                                      background: "#dc3545",
+                                      color: "white"
+                                    }}
+                                  >
+                                    ✗ Reject
+                                  </button>
+                                </div>
+                              )}
+                              
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleProductStatus(p._id, p.isActive !== false);
+                                }}
+                                style={{
+                                  padding: "8px",
+                                  fontSize: "12px",
+                                  fontWeight: "600",
+                                  border: "none",
+                                  borderRadius: "6px",
+                                  cursor: "pointer",
+                                  background: p.isActive === false ? "#6c757d" : "#ffc107",
+                                  color: "white"
+                                }}
+                              >
+                                {p.isActive === false ? "Enable Product" : "Disable Product"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            {/* Product Details Modal */}
+            {selectedOrder && (
+              <div 
+                onClick={() => setSelectedOrder(null)}
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: "rgba(0,0,0,0.6)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 9999,
+                  padding: "20px"
+                }}
+              >
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    background: "#fff",
+                    borderRadius: "16px",
+                    maxWidth: "900px",
+                    width: "100%",
+                    maxHeight: "90vh",
+                    overflow: "auto",
+                    boxShadow: "0 20px 60px rgba(0,0,0,0.3)"
+                  }}
+                >
+                  {/* Modal Header */}
+                  <div style={{
+                    padding: "24px",
+                    borderBottom: "1px solid #eee",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    position: "sticky",
+                    top: 0,
+                    background: "#fff",
+                    zIndex: 1
+                  }}>
+                    <h2 style={{ margin: 0, color: "#5c4033" }}>Product Details</h2>
+                    <button
+                      onClick={() => setSelectedOrder(null)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        fontSize: "24px",
+                        cursor: "pointer",
+                        color: "#666",
+                        padding: "0",
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  {/* Modal Content */}
+                  <div style={{ padding: "24px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px" }}>
+                      {/* Left Column - Image */}
+                      <div>
+                        <div style={{ 
+                          width: "100%", 
+                          paddingTop: "100%", 
+                          position: "relative", 
+                          background: "#f5f5f5",
+                          borderRadius: "12px",
+                          overflow: "hidden"
+                        }}>
+                          {selectedOrder.image ? (
+                            <img
+                              src={`http://localhost:5000/uploads/${selectedOrder.image}`}
+                              alt={selectedOrder.title}
+                              style={{ 
+                                position: "absolute", 
+                                top: 0, 
+                                left: 0, 
+                                width: "100%", 
+                                height: "100%", 
+                                objectFit: "cover" 
+                              }}
+                            />
+                          ) : selectedOrder.img ? (
+                            <img
+                              src={`/images/products/${selectedOrder.img}`}
+                              alt={selectedOrder.title}
+                              style={{ 
+                                position: "absolute", 
+                                top: 0, 
+                                left: 0, 
+                                width: "100%", 
+                                height: "100%", 
+                                objectFit: "cover" 
+                              }}
+                            />
+                          ) : (
+                            <div style={{ 
+                              position: "absolute", 
+                              top: 0, 
+                              left: 0, 
+                              width: "100%", 
+                              height: "100%", 
+                              display: "flex", 
+                              alignItems: "center", 
+                              justifyContent: "center",
+                              fontSize: "16px",
+                              color: "#999"
+                            }}>
+                              No Image Available
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Right Column - Details */}
+                      <div>
+                        <h1 style={{ fontSize: "24px", marginBottom: "16px", color: "#5c4033" }}>
+                          {selectedOrder.title}
+                        </h1>
+                        
+                        {/* Seller Info */}
+                        <div style={{ 
+                          padding: "16px", 
+                          background: "#f9f9f9", 
+                          borderRadius: "8px",
+                          marginBottom: "20px"
+                        }}>
+                          <h4 style={{ margin: "0 0 8px 0", fontSize: "14px", color: "#666" }}>Seller Information</h4>
+                          <div style={{ fontSize: "16px", fontWeight: "600", color: "#5c4033" }}>
+                            {selectedOrder.sellerName || "Unknown"}
+                          </div>
+                          <div style={{ fontSize: "13px", color: "#666" }}>
+                            {selectedOrder.sellerEmail || ""}
+                          </div>
+                        </div>
+                        
+                        {/* Details Grid */}
+                        <div style={{ display: "grid", gap: "16px" }}>
+                          <div>
+                            <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Category</div>
+                            <div style={{ fontSize: "15px", fontWeight: "600" }}>
+                              {selectedOrder.mainCategory || selectedOrder.category || "N/A"}
+                              {selectedOrder.subCategory && ` / ${selectedOrder.subCategory}`}
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Price Range</div>
+                            <div style={{ fontSize: "18px", fontWeight: "700", color: "#5c4033" }}>
+                              {selectedOrder.variants && selectedOrder.variants.length > 0
+                                ? `₹${Math.min(...selectedOrder.variants.map(v => v.price))} - ₹${Math.max(...selectedOrder.variants.map(v => v.price))}`
+                                : "N/A"}
+                            </div>
+                          </div>
+                          
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                            <div>
+                              <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Stock Quantity</div>
+                              <div style={{ 
+                                fontSize: "16px", 
+                                fontWeight: "600",
+                                color: selectedOrder.stock > 10 ? "#28a745" : selectedOrder.stock > 0 ? "#ffc107" : "#dc3545"
+                              }}>
+                                {selectedOrder.stock || 0} units
+                              </div>
+                            </div>
+                            
+                            <div>
+                              <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Product Status</div>
+                              <span style={{
+                                padding: "6px 12px",
+                                borderRadius: "12px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                background: selectedOrder.isActive === false ? "#ffebee" : "#e8f5e9",
+                                color: selectedOrder.isActive === false ? "#c62828" : "#2e7d32",
+                                display: "inline-block"
+                              }}>
+                                {selectedOrder.isActive === false ? "Disabled" : "Active"}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div>
+                            <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Approval Status</div>
+                            <span style={{
+                              padding: "8px 16px",
+                              borderRadius: "12px",
+                              fontSize: "13px",
+                              fontWeight: "600",
+                              background: 
+                                selectedOrder.approvalStatus === "approved" ? "#e8f5e9" :
+                                selectedOrder.approvalStatus === "rejected" ? "#ffebee" :
+                                "#fff3e0",
+                              color:
+                                selectedOrder.approvalStatus === "approved" ? "#2e7d32" :
+                                selectedOrder.approvalStatus === "rejected" ? "#c62828" :
+                                "#f57c00",
+                              display: "inline-block"
+                            }}>
+                              {selectedOrder.approvalStatus === "approved" ? "✓ Approved" :
+                               selectedOrder.approvalStatus === "rejected" ? "✗ Rejected" :
+                               "⏳ Pending Approval"}
+                            </span>
+                          </div>
+                          
+                          <div>
+                            <div style={{ fontSize: "12px", color: "#666", marginBottom: "4px" }}>Date Added</div>
+                            <div style={{ fontSize: "14px" }}>
+                              {selectedOrder.createdAt ? new Date(selectedOrder.createdAt).toLocaleDateString('en-IN', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric'
+                              }) : "N/A"}
+                            </div>
+                          </div>
+                          
+                          {selectedOrder.variants && selectedOrder.variants.length > 0 && (
+                            <div>
+                              <div style={{ fontSize: "12px", color: "#666", marginBottom: "8px" }}>Variants</div>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                                {selectedOrder.variants.map((variant, idx) => (
+                                  <div key={idx} style={{ 
+                                    padding: "10px", 
+                                    background: "#f9f9f9", 
+                                    borderRadius: "6px",
+                                    display: "flex",
+                                    justifyContent: "space-between"
+                                  }}>
+                                    <span style={{ fontSize: "13px" }}>{variant.name}</span>
+                                    <span style={{ fontSize: "13px", fontWeight: "600", color: "#5c4033" }}>
+                                      ₹{variant.price}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Action Buttons */}
+                        <div style={{ marginTop: "24px", display: "flex", gap: "12px", flexDirection: "column" }}>
+                          {selectedOrder.approvalStatus === "pending" && (
+                            <div style={{ display: "flex", gap: "12px" }}>
+                              <button
+                                onClick={() => {
+                                  approveProduct(selectedOrder._id);
+                                  setSelectedOrder(null);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: "12px",
+                                  fontSize: "14px",
+                                  fontWeight: "600",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer",
+                                  background: "#28a745",
+                                  color: "white"
+                                }}
+                              >
+                                ✓ Approve Product
+                              </button>
+                              <button
+                                onClick={() => {
+                                  rejectProduct(selectedOrder._id);
+                                  setSelectedOrder(null);
+                                }}
+                                style={{
+                                  flex: 1,
+                                  padding: "12px",
+                                  fontSize: "14px",
+                                  fontWeight: "600",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer",
+                                  background: "#dc3545",
+                                  color: "white"
+                                }}
+                              >
+                                ✗ Reject Product
+                              </button>
+                            </div>
+                          )}
+                          
+                          <button
+                            onClick={() => {
+                              toggleProductStatus(selectedOrder._id, selectedOrder.isActive !== false);
+                              setSelectedOrder(null);
+                            }}
+                            style={{
+                              padding: "12px",
+                              fontSize: "14px",
+                              fontWeight: "600",
+                              border: "none",
+                              borderRadius: "8px",
+                              cursor: "pointer",
+                              background: selectedOrder.isActive === false ? "#6c757d" : "#ffc107",
+                              color: "white"
+                            }}
+                          >
+                            {selectedOrder.isActive === false ? "Enable Product" : "Disable Product"}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  ))
-                )}
+                  </div>
+                </div>
               </div>
-            </section>
+            )}
           </>
         )}
 
@@ -1279,122 +1724,13 @@ export default function AdminDashboard() {
                             </td>
                             <td style={{ padding: "14px", color: "#6f5b4a" }}>{createdDate}</td>
                             <td style={{ padding: "14px" }}>
-                              {orderStatus === "delivered" ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  <span style={{
-                                    padding: "6px 10px",
-                                    borderRadius: "999px",
-                                    fontSize: "12px",
-                                    backgroundColor: "#d4edda",
-                                    color: "#155724",
-                                    fontWeight: 600
-                                  }}>
-                                    ✅ Delivered
-                                  </span>
-                                  {order?.deliveryInfo?.agentId && (
-                                    <span style={{ fontSize: "10px", color: "#666" }}>
-                                      {order.deliveryInfo.agentId}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : orderStatus === "out_for_delivery" || orderStatus === "in_transit" ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  <span style={{
-                                    padding: "6px 10px",
-                                    borderRadius: "999px",
-                                    fontSize: "12px",
-                                    backgroundColor: "#fff3cd",
-                                    color: "#856404",
-                                    fontWeight: 600
-                                  }}>
-                                    🚚 Out for Delivery
-                                  </span>
-                                  {order?.deliveryInfo?.agentId && (
-                                    <span style={{ fontSize: "10px", color: "#666" }}>
-                                      {order.deliveryInfo.agentId}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : orderStatus === "picked_up" || orderStatus === "shipped" ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  <span style={{
-                                    padding: "6px 10px",
-                                    borderRadius: "999px",
-                                    fontSize: "12px",
-                                    backgroundColor: "#cfe2ff",
-                                    color: "#084298",
-                                    fontWeight: 600
-                                  }}>
-                                    📦 Picked Up
-                                  </span>
-                                  {order?.deliveryInfo?.agentId && (
-                                    <span style={{ fontSize: "10px", color: "#666" }}>
-                                      {order.deliveryInfo.agentId}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : orderStatus === "accepted" ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  <span style={{
-                                    padding: "6px 10px",
-                                    borderRadius: "999px",
-                                    fontSize: "12px",
-                                    backgroundColor: "#e7f3ff",
-                                    color: "#0a58ca",
-                                    fontWeight: 600
-                                  }}>
-                                    ✓ Accepted
-                                  </span>
-                                  {order?.deliveryInfo?.agentId && (
-                                    <span style={{ fontSize: "10px", color: "#666" }}>
-                                      {order.deliveryInfo.agentId}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : orderStatus === "assigned" ? (
-                                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                                  <span style={{
-                                    padding: "6px 10px",
-                                    borderRadius: "999px",
-                                    fontSize: "12px",
-                                    backgroundColor: "#e6f4ea",
-                                    color: "#1e7e34",
-                                    fontWeight: 600
-                                  }}>
-                                    📋 Assigned
-                                  </span>
-                                  {order?.deliveryInfo?.agentId && (
-                                    <span style={{ fontSize: "10px", color: "#666" }}>
-                                      {order.deliveryInfo.agentId}
-                                    </span>
-                                  )}
-                                </div>
-                              ) : orderStatus === "confirmed" ? (
-                                <button
-                                  onClick={() => openAssignModal(order)}
-                                  style={{
-                                    background: "#5c4033",
-                                    color: "white",
-                                    border: "none",
-                                    padding: "8px 12px",
-                                    borderRadius: "8px",
-                                    cursor: "pointer",
-                                    fontSize: "12px",
-                                    boxShadow: "0 2px 6px rgba(92,64,51,0.15)"
-                                  }}
-                                >
-                                  🚚 Assign
-                                </button>
+                              {order.deliveryAgent ? (
+                                <span style={{ fontSize: "12px", color: "#5c4033" }}>
+                                  {order.deliveryAgent.name}
+                                </span>
                               ) : (
-                                <span style={{
-                                  padding: "6px 10px",
-                                  borderRadius: "999px",
-                                  fontSize: "12px",
-                                  backgroundColor: "#f8f9fa",
-                                  color: "#6c757d",
-                                  fontWeight: 600
-                                }}>
-                                  -
+                                <span style={{ fontSize: "12px", color: "#999" }}>
+                                  Not Assigned
                                 </span>
                               )}
                             </td>
@@ -1416,285 +1752,1972 @@ export default function AdminDashboard() {
             </div>
           </>
         )}
+        
+        {activeSection === "sellers" && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "32px" }}>
+              <div>
+                <h1 style={{ 
+                  margin: "0 0 8px 0", 
+                  color: "var(--brand-strong, #6f4518)", 
+                  fontFamily: "var(--title-font, 'Playfair Display', serif)",
+                  fontSize: "36px",
+                  fontWeight: "900"
+                }}>
+                  Seller Management
+                </h1>
+                <p style={{ 
+                  margin: 0, 
+                  color: "var(--text-muted, #7b6457)", 
+                  fontSize: "15px" 
+                }}>
+                  Manage approved sellers and their products
+                </p>
+              </div>
+              <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+                <button
+                  onClick={() => navigate("/admin/applications")}
+                  style={{
+                    padding: "12px 24px",
+                    background: "var(--accent-soft, #f3e7dc)",
+                    color: "var(--brand, #8b5e34)",
+                    border: "2px solid var(--brand, #8b5e34)",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "15px",
+                    fontWeight: "700",
+                    transition: "all 0.2s ease",
+                    boxShadow: "0 4px 12px rgba(139, 94, 52, 0.2)"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = "var(--brand, #8b5e34)";
+                    e.target.style.color = "white";
+                    e.target.style.transform = "translateY(-2px)";
+                    e.target.style.boxShadow = "0 6px 16px rgba(139, 94, 52, 0.4)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = "var(--accent-soft, #f3e7dc)";
+                    e.target.style.color = "var(--brand, #8b5e34)";
+                    e.target.style.transform = "translateY(0)";
+                    e.target.style.boxShadow = "0 4px 12px rgba(139, 94, 52, 0.2)";
+                  }}
+                >
+                  📋 Applications
+                </button>
+                <button
+                  onClick={() => {
+                    const user = auth.currentUser;
+                    if (user) {
+                      fetchApprovedSellers(user);
+                    }
+                  }}
+                  style={{
+                    padding: "12px 24px",
+                    background: "var(--brand, #8b5e34)",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "10px",
+                    cursor: "pointer",
+                    fontSize: "15px",
+                    fontWeight: "700",
+                    transition: "all 0.2s ease",
+                    boxShadow: "0 4px 12px rgba(139, 94, 52, 0.3)"
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.background = "var(--brand-strong, #6f4518)";
+                    e.target.style.transform = "translateY(-2px)";
+                    e.target.style.boxShadow = "0 6px 16px rgba(139, 94, 52, 0.4)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.background = "var(--brand, #8b5e34)";
+                    e.target.style.transform = "translateY(0)";
+                    e.target.style.boxShadow = "0 4px 12px rgba(139, 94, 52, 0.3)";
+                  }}
+                >
+                  🔄 Refresh
+                </button>
+              </div>
+            </div>
 
-        {/* Settings Section */}
-        {activeSection === "delivery" && (
+            {/* Approved Sellers Section - COMPACT */}
+            <div style={{ 
+              background: "linear-gradient(135deg, var(--surface, #ffffff) 0%, var(--accent-soft, #f3e7dc) 100%)", 
+              padding: "20px", 
+              borderRadius: "16px", 
+              border: "2px solid var(--brand, #8b5e34)",
+              boxShadow: "0 8px 20px rgba(139, 94, 52, 0.15)",
+              marginBottom: "24px"
+            }}>
+              <div style={{ 
+                display: "flex", 
+                alignItems: "center", 
+                justifyContent: "space-between",
+                marginBottom: "20px"
+              }}>
+                <div>
+                  <h2 style={{ 
+                    margin: "0 0 4px 0", 
+                    color: "var(--brand-strong, #6f4518)", 
+                    fontFamily: "var(--title-font, 'Playfair Display', serif)",
+                    fontSize: "22px",
+                    fontWeight: "700"
+                  }}>
+                    Approved Sellers & Their Products
+                  </h2>
+                  <p style={{
+                    margin: 0,
+                    color: "var(--text-muted, #7b6457)",
+                    fontSize: "13px"
+                  }}>
+                    {approvedSellers.length} {approvedSellers.length === 1 ? 'Seller' : 'Sellers'} Active
+                  </p>
+                </div>
+              </div>
+
+              {loadingSellers ? (
+                <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                  <div style={{
+                    width: "48px",
+                    height: "48px",
+                    border: "4px solid var(--border, #ead9c9)",
+                    borderTop: "4px solid var(--brand, #8b5e34)",
+                    borderRadius: "50%",
+                    animation: "spin 1s linear infinite",
+                    margin: "0 auto 16px"
+                  }}></div>
+                  <p style={{ color: "var(--text-muted, #7b6457)", fontSize: "16px" }}>Loading sellers...</p>
+                </div>
+              ) : approvedSellers.length === 0 ? (
+                <div style={{ 
+                  textAlign: "center", 
+                  padding: "60px 20px",
+                  background: "var(--accent-soft, #f3e7dc)",
+                  borderRadius: "12px",
+                  border: "1px solid var(--border, #ead9c9)"
+                }}>
+                  <div style={{ fontSize: "64px", marginBottom: "16px" }}>👥</div>
+                  <h3 style={{ 
+                    margin: "0 0 12px 0", 
+                    color: "var(--text, #3f2d23)",
+                    fontFamily: "var(--title-font, 'Playfair Display', serif)"
+                  }}>
+                    No Approved Sellers Yet
+                  </h3>
+                  <p style={{ color: "var(--text-muted, #7b6457)", margin: 0, fontSize: "14px" }}>
+                    Approved sellers will appear here once their applications are approved.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+                  {approvedSellers.map((seller) => {
+                    const sellerProds = sellerProducts[seller._id] || [];
+                    const isExpanded = expandedSeller === seller._id;
+                    
+                    return (
+                      <div
+                        key={seller._id}
+                        style={{
+                          background: "var(--accent-soft, #f3e7dc)",
+                          borderRadius: "16px",
+                          padding: "24px",
+                          border: "2px solid var(--border, #ead9c9)",
+                          boxShadow: "var(--shadow, 0 10px 24px rgba(63,45,35,.10))",
+                          transition: "all 0.3s ease"
+                        }}
+                      >
+                        {/* Seller Header */}
+                        <div style={{ 
+                          display: "flex", 
+                          justifyContent: "space-between", 
+                          alignItems: "start",
+                          marginBottom: "20px"
+                        }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+                              <div style={{
+                                width: "56px",
+                                height: "56px",
+                                borderRadius: "50%",
+                                background: "linear-gradient(135deg, var(--brand, #8b5e34) 0%, var(--brand-strong, #6f4518) 100%)",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "white",
+                                fontSize: "24px",
+                                fontWeight: "700",
+                                fontFamily: "var(--title-font, 'Playfair Display', serif)"
+                              }}>
+                                {seller.businessName?.charAt(0)?.toUpperCase() || seller.email?.charAt(0)?.toUpperCase() || "S"}
+                              </div>
+                              <div>
+                                <h3 style={{
+                                  margin: "0 0 4px 0",
+                                  color: "var(--brand-strong, #6f4518)",
+                                  fontSize: "20px",
+                                  fontFamily: "var(--title-font, 'Playfair Display', serif)",
+                                  fontWeight: "700"
+                                }}>
+                                  {seller.businessName || seller.userInfo?.name || "Seller"}
+                                </h3>
+                                <p style={{ margin: 0, fontSize: "14px", color: "var(--text-muted, #7b6457)" }}>
+                                  {seller.email || seller.userInfo?.email}
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Seller Details Grid */}
+                            <div style={{
+                              display: "grid",
+                              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                              gap: "16px",
+                              marginTop: "16px"
+                            }}>
+                              <div>
+                                <p style={{ 
+                                  margin: "0 0 4px 0", 
+                                  fontSize: "12px", 
+                                  color: "var(--text-muted, #7b6457)",
+                                  textTransform: "uppercase",
+                                  fontWeight: "600",
+                                  letterSpacing: "0.5px"
+                                }}>
+                                  Phone
+                                </p>
+                                <p style={{ margin: 0, fontSize: "15px", color: "var(--text, #3f2d23)", fontWeight: "600" }}>
+                                  {seller.phone || seller.userInfo?.phone || "N/A"}
+                                </p>
+                              </div>
+                              <div>
+                                <p style={{ 
+                                  margin: "0 0 4px 0", 
+                                  fontSize: "12px", 
+                                  color: "var(--text-muted, #7b6457)",
+                                  textTransform: "uppercase",
+                                  fontWeight: "600",
+                                  letterSpacing: "0.5px"
+                                }}>
+                                  Products
+                                </p>
+                                <p style={{ margin: 0, fontSize: "15px", color: "var(--brand, #8b5e34)", fontWeight: "700" }}>
+                                  {sellerProds.length} {sellerProds.length === 1 ? 'Product' : 'Products'}
+                                </p>
+                              </div>
+                              <div>
+                                <p style={{ 
+                                  margin: "0 0 4px 0", 
+                                  fontSize: "12px", 
+                                  color: "var(--text-muted, #7b6457)",
+                                  textTransform: "uppercase",
+                                  fontWeight: "600",
+                                  letterSpacing: "0.5px"
+                                }}>
+                                  Approved Date
+                                </p>
+                                <p style={{ margin: 0, fontSize: "15px", color: "var(--text, #3f2d23)", fontWeight: "600" }}>
+                                  {seller.approvedAt 
+                                    ? new Date(seller.approvedAt).toLocaleDateString('en-IN')
+                                    : seller.updatedAt 
+                                    ? new Date(seller.updatedAt).toLocaleDateString('en-IN')
+                                    : "N/A"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Expand/Collapse Button */}
+                          <button
+                            onClick={() => setExpandedSeller(isExpanded ? null : seller._id)}
+                            style={{
+                              padding: "6px 14px",
+                              background: "var(--brand, #8b5e34)",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "6px",
+                              cursor: "pointer",
+                              fontSize: "13px",
+                              fontWeight: "600",
+                              transition: "all 0.2s ease",
+                              whiteSpace: "nowrap"
+                            }}
+                            onMouseEnter={(e) => e.target.style.background = "var(--brand-strong, #6f4518)"}
+                            onMouseLeave={(e) => e.target.style.background = "var(--brand, #8b5e34)"}
+                          >
+                            {isExpanded ? "▲ Hide" : "▼ View"}
+                          </button>
+                        </div>
+
+                        {/* Expanded Products Section */}
+                        {isExpanded && (
+                          <div style={{
+                            marginTop: "16px",
+                            paddingTop: "16px",
+                            borderTop: "1px solid var(--border, #ead9c9)"
+                          }}>
+                            <h4 style={{
+                              margin: "0 0 12px 0",
+                              color: "var(--brand, #8b5e34)",
+                              fontSize: "16px",
+                              fontFamily: "var(--title-font, 'Playfair Display', serif)"
+                            }}>
+                              Products ({sellerProds.length})
+                            </h4>
+
+                            {sellerProds.length === 0 ? (
+                              <div style={{
+                                textAlign: "center",
+                                padding: "40px 20px",
+                                background: "var(--surface, #ffffff)",
+                                borderRadius: "12px",
+                                border: "1px solid var(--border, #ead9c9)"
+                              }}>
+                                <div style={{ fontSize: "48px", marginBottom: "12px" }}>📦</div>
+                                <p style={{ margin: 0, color: "var(--text-muted, #7b6457)", fontSize: "14px" }}>
+                                  This seller hasn't added any products yet.
+                                </p>
+                              </div>
+                            ) : (
+                              <div style={{
+                                display: "grid",
+                                gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+                                gap: "16px"
+                              }}>
+                                {sellerProds.map((product) => (
+                                  <div
+                                    key={product._id}
+                                    style={{
+                                      background: "var(--surface, #ffffff)",
+                                      borderRadius: "14px",
+                                      padding: "0",
+                                      border: "2px solid var(--border, #ead9c9)",
+                                      overflow: "hidden",
+                                      transition: "all 0.3s ease",
+                                      boxShadow: "0 4px 12px rgba(63, 45, 35, 0.08)"
+                                    }}
+                                    onMouseEnter={(e) => {
+                                      e.target.style.transform = "translateY(-6px)";
+                                      e.target.style.boxShadow = "0 12px 24px rgba(63, 45, 35, 0.2)";
+                                      e.target.style.borderColor = "var(--brand, #8b5e34)";
+                                    }}
+                                    onMouseLeave={(e) => {
+                                      e.target.style.transform = "translateY(0)";
+                                      e.target.style.boxShadow = "0 4px 12px rgba(63, 45, 35, 0.08)";
+                                      e.target.style.borderColor = "var(--border, #ead9c9)";
+                                    }}
+                                  >
+                                    {/* Product Image - Always Shown */}
+                                    <div style={{
+                                      width: "100%",
+                                      height: "180px",
+                                      background: "var(--accent-soft, #f3e7dc)",
+                                      position: "relative",
+                                      overflow: "hidden"
+                                    }}>
+                                      {(() => {
+                                        const imageUrl = product.image 
+                                          ? `${API_BASE}/uploads/${product.image}`
+                                          : product.img
+                                          ? `${API_BASE}/uploads/${product.img}`
+                                          : null;
+                                        
+                                        return imageUrl ? (
+                                          <img
+                                            src={imageUrl}
+                                            alt={product.title || "Product"}
+                                            style={{
+                                              width: "100%",
+                                              height: "100%",
+                                              objectFit: "cover"
+                                            }}
+                                            onError={(e) => {
+                                              e.target.style.display = "none";
+                                              const parent = e.target.parentElement;
+                                              if (parent && !parent.querySelector('.fallback-icon')) {
+                                                const fallback = document.createElement('div');
+                                                fallback.className = 'fallback-icon';
+                                                fallback.style.cssText = 'display: flex; align-items: center; justify-content: center; height: 100%; font-size: 48px; color: var(--text-muted, #7b6457);';
+                                                fallback.textContent = '📦';
+                                                parent.appendChild(fallback);
+                                              }
+                                            }}
+                                          />
+                                        ) : (
+                                          <div style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            justifyContent: "center",
+                                            height: "100%",
+                                            fontSize: "48px",
+                                            color: "var(--text-muted, #7b6457)"
+                                          }}>
+                                            📦
+                                          </div>
+                                        );
+                                      })()}
+                                    </div>
+                                    
+                                    {/* Product Info */}
+                                    <div style={{ padding: "16px" }}>
+                                      <h5 style={{
+                                      margin: "0 0 8px 0",
+                                      color: "var(--text, #3f2d23)",
+                                      fontSize: "17px",
+                                      fontWeight: "700",
+                                      fontFamily: "var(--title-font, 'Playfair Display', serif)",
+                                      lineHeight: "1.3"
+                                    }}>
+                                      {product.title}
+                                    </h5>
+                                    {product.description && (
+                                      <p style={{
+                                        margin: "0 0 12px 0",
+                                        fontSize: "13px",
+                                        color: "var(--text-muted, #7b6457)",
+                                        lineHeight: "1.5",
+                                        display: "-webkit-box",
+                                        WebkitLineClamp: 2,
+                                        WebkitBoxOrient: "vertical",
+                                        overflow: "hidden"
+                                      }}>
+                                        {product.description}
+                                      </p>
+                                    )}
+                                    <div style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      marginTop: "12px",
+                                      paddingTop: "12px",
+                                      borderTop: "1px solid var(--border, #ead9c9)"
+                                    }}>
+                                      <span style={{
+                                        fontSize: "20px",
+                                        fontWeight: "700",
+                                        color: "var(--brand, #8b5e34)",
+                                        fontFamily: "var(--title-font, 'Playfair Display', serif)"
+                                      }}>
+                                        {(() => {
+                                          // Get price from variants array
+                                          let price = 0;
+                                          if (product.variants && Array.isArray(product.variants) && product.variants.length > 0) {
+                                            // Get the minimum price from variants
+                                            const prices = product.variants
+                                              .map(v => Number(v.price) || 0)
+                                              .filter(p => p > 0);
+                                            if (prices.length > 0) {
+                                              price = Math.min(...prices);
+                                            }
+                                          } else if (product.price) {
+                                            // Fallback to direct price field if variants don't exist
+                                            price = Number(product.price) || 0;
+                                          }
+                                          return price > 0 ? `₹${price.toLocaleString("en-IN")}` : "₹0";
+                                        })()}
+                                      </span>
+                                      <span style={{
+                                        padding: "6px 12px",
+                                        borderRadius: "20px",
+                                        fontSize: "12px",
+                                        fontWeight: "700",
+                                        background: product.isActive !== false 
+                                          ? "linear-gradient(135deg, var(--accent-soft, #f3e7dc) 0%, #f8f2ea 100%)" 
+                                          : "#f8d7da",
+                                        color: product.isActive !== false ? "var(--brand, #8b5e34)" : "#721c24",
+                                        border: `1px solid ${product.isActive !== false ? "var(--border, #ead9c9)" : "#721c24"}`
+                                      }}>
+                                        {product.isActive !== false ? "✓ Active" : "✗ Inactive"}
+                                      </span>
+                                    </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+          </>
+        )}
+
+        {/* Hub Orders Section - Enhanced Product Movement Control */}
+        {activeSection === "hub-orders" && (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h1>Delivery Boys Management</h1>
+              <h1 style={{ margin: 0 }}>Product Movement Control & Approvals</h1>
+              
+              {/* Status Summary */}
+              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                {unreadNotificationCount > 0 && (
+                  <div style={{
+                    background: "linear-gradient(135deg, #dc3545 0%, #c82333 100%)",
+                    color: "white",
+                    padding: "8px 16px",
+                    borderRadius: "20px",
+                    fontSize: "14px",
+                    fontWeight: "600",
+                    boxShadow: "0 2px 8px rgba(220, 53, 69, 0.3)"
+                  }}>
+                    🚨 {unreadNotificationCount} Pending Approval{unreadNotificationCount > 1 ? 's' : ''}
+                  </div>
+                )}
+                
+                {/* Notifications Bell */}
+                <div style={{ position: "relative" }}>
+                  <button
+                    onClick={() => setShowNotifications(!showNotifications)}
+                    style={{
+                      background: "#fff",
+                      border: "2px solid #5c4033",
+                      borderRadius: "50%",
+                      width: "48px",
+                      height: "48px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "20px",
+                      position: "relative"
+                    }}
+                  >
+                    🔔
+                    {unreadNotificationCount > 0 && (
+                      <span style={{
+                        position: "absolute",
+                        top: "-5px",
+                        right: "-5px",
+                        background: "#dc3545",
+                        color: "white",
+                        borderRadius: "50%",
+                        width: "20px",
+                        height: "20px",
+                        fontSize: "11px",
+                        fontWeight: "bold",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}>
+                        {unreadNotificationCount}
+                      </span>
+                    )}
+                  </button>
+                  
+                  {/* Notifications Dropdown */}
+                  {showNotifications && (
+                  <div style={{
+                    position: "absolute",
+                    top: "55px",
+                    right: "0",
+                    background: "#fff",
+                    border: "1px solid #ddd",
+                    borderRadius: "8px",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+                    width: "350px",
+                    maxHeight: "400px",
+                    overflow: "auto",
+                    zIndex: 1000
+                  }}>
+                    <div style={{ padding: "15px", borderBottom: "1px solid #eee" }}>
+                      <h3 style={{ margin: 0, fontSize: "16px", color: "#5c4033" }}>
+                        Admin Notifications ({unreadNotificationCount})
+                      </h3>
+                    </div>
+                    
+                    {adminNotifications.length === 0 ? (
+                      <div style={{ padding: "20px", textAlign: "center", color: "#666" }}>
+                        No new notifications
+                      </div>
+                    ) : (
+                      adminNotifications.map((notification) => (
+                        <div
+                          key={notification._id}
+                          style={{
+                            padding: "15px",
+                            borderBottom: "1px solid #f0f0f0",
+                            cursor: "pointer",
+                            background: "#fff"
+                          }}
+                          onClick={() => markAdminNotificationAsRead(notification._id)}
+                        >
+                          <div style={{ fontWeight: "600", fontSize: "14px", marginBottom: "5px", color: "#5c4033" }}>
+                            {notification.title}
+                          </div>
+                          <div style={{ fontSize: "13px", color: "#666", marginBottom: "8px" }}>
+                            {notification.message}
+                          </div>
+                          <div style={{ fontSize: "11px", color: "#999" }}>
+                            {new Date(notification.createdAt).toLocaleString()}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            {/* Info Message */}
+            <div style={{ 
+              background: "#fff3cd", 
+              border: "1px solid #ffeaa7", 
+              borderRadius: "8px",
+              padding: "15px",
+              marginBottom: "20px"
+            }}>
+              <p style={{ margin: 0, color: "#5c4033" }}>
+                <strong>⚠️ Admin Approval Required:</strong> Orders at seller hubs need your approval before they can be dispatched to customer hubs. 
+                Orders labeled as "Order" are at seller hubs, once approved they become "Dispatch" to customer hubs.
+              </p>
+            </div>
+
+            {/* Tab Navigation */}
+            <div style={{ 
+              display: "flex", 
+              marginBottom: "20px",
+              borderBottom: "2px solid #e9ecef"
+            }}>
               <button
-                onClick={() => {
-                  setDeliveryForm({
-                    name: "",
-                    phone: "",
-                    email: "",
-                    username: "",
-                    password: "",
-                    address: { street: "", city: "", state: "", pincode: "" },
-                    vehicleInfo: { type: "", number: "" }
-                  });
-                  setEditingDeliveryId(null);
-                  setShowDeliveryModal(true);
-                }}
+                onClick={() => setActiveHubTab("pending")}
                 style={{
-                  background: "#5c4033",
-                  color: "white",
-                  border: "none",
                   padding: "12px 24px",
-                  borderRadius: "8px",
+                  background: activeHubTab === "pending" ? "#5c4033" : "transparent",
+                  color: activeHubTab === "pending" ? "#fff" : "#5c4033",
+                  border: "none",
+                  borderRadius: "8px 8px 0 0",
                   cursor: "pointer",
-                  fontWeight: "500"
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  marginRight: "4px"
                 }}
               >
-                + Add Delivery Boy
+                🚨 Pending Approvals ({pendingHubOrders.length})
+              </button>
+              <button
+                onClick={() => setActiveHubTab("approved")}
+                style={{
+                  padding: "12px 24px",
+                  background: activeHubTab === "approved" ? "#5c4033" : "transparent",
+                  color: activeHubTab === "approved" ? "#fff" : "#5c4033",
+                  border: "none",
+                  borderRadius: "8px 8px 0 0",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "600"
+                }}
+              >
+                ✅ Approved Orders ({approvedHubOrders.length})
               </button>
             </div>
 
-            {/* Filter Tabs */}
-            <div style={{ marginBottom: "20px" }}>
-              {["all", "active", "inactive", "pending"].map(status => (
-                <button
-                  key={status}
-                  onClick={() => {
-                    setDeliveryFilter(status);
-                    fetchDeliveryAgents(auth.currentUser, status);
-                  }}
-                  style={{
-                    padding: "8px 16px",
-                    margin: "0 8px 0 0",
-                    border: "1px solid #ddd",
-                    background: deliveryFilter === status ? "#5c4033" : "white",
-                    color: deliveryFilter === status ? "white" : "#333",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                    textTransform: "capitalize"
-                  }}
-                >
-                  {status} ({deliveryAgents.filter(agent => status === "all" || agent.status === status).length})
-                </button>
-              ))}
-            </div>
-
-            {/* Delivery Agents List */}
-            <div style={{ background: "#fff", borderRadius: "12px", overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                <thead>
-                  <tr style={{ background: "#f8f9fa" }}>
-                    <th style={{ padding: "16px", textAlign: "left", borderBottom: "1px solid #eee" }}>Agent ID</th>
-                    <th style={{ padding: "16px", textAlign: "left", borderBottom: "1px solid #eee" }}>Name</th>
-                    <th style={{ padding: "16px", textAlign: "left", borderBottom: "1px solid #eee" }}>Contact</th>
-                    <th style={{ padding: "16px", textAlign: "left", borderBottom: "1px solid #eee" }}>Status</th>
-                    <th style={{ padding: "16px", textAlign: "left", borderBottom: "1px solid #eee" }}>Vehicle</th>
-                    <th style={{ padding: "16px", textAlign: "left", borderBottom: "1px solid #eee" }}>Deliveries</th>
-                    <th style={{ padding: "16px", textAlign: "left", borderBottom: "1px solid #eee" }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deliveryAgents
-                    .filter(agent => deliveryFilter === "all" || agent.status === deliveryFilter)
-                    .map((agent) => (
-                    <tr key={agent.agentId} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                      <td style={{ padding: "16px" }}>
-                        <strong>{agent.agentId}</strong>
-                      </td>
-                      <td style={{ padding: "16px" }}>
-                        <div>
-                          <div style={{ fontWeight: "500" }}>{agent.name}</div>
-                          <div style={{ fontSize: "12px", color: "#666" }}>@{agent.username}</div>
-                        </div>
-                      </td>
-                      <td style={{ padding: "16px" }}>
-                        <div style={{ fontSize: "14px" }}>
-                          <div>{agent.phone}</div>
-                          <div style={{ color: "#666", fontSize: "12px" }}>{agent.email}</div>
-                        </div>
-                      </td>
-                      <td style={{ padding: "16px" }}>
+            {/* Pending Orders Tab */}
+            {activeHubTab === "pending" && (
+              <>
+                {/* Urgent: Product Movement Approvals */}
+                {pendingHubOrders.length > 0 && (
+              <div style={{ 
+                background: "linear-gradient(135deg, #fff5f5 0%, #ffe6e6 100%)", 
+                padding: "24px", 
+                borderRadius: "12px", 
+                marginBottom: "20px",
+                border: "2px solid #dc3545"
+              }}>
+                <h2 style={{ marginBottom: "20px", color: "#dc3545", display: "flex", alignItems: "center", gap: "8px" }}>
+                  ⚠️ Urgent: Orders Awaiting Your Approval ({pendingHubOrders.length})
+                </h2>
+                <p style={{ marginBottom: "20px", color: "#666", fontSize: "14px" }}>
+                  These orders have arrived at seller district hubs and require your approval before they can be dispatched to customer district hubs.
+                </p>
+                
+                <div style={{ 
+                  display: "grid", 
+                  gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", 
+                  gap: "15px" 
+                }}>
+                  {pendingHubOrders.map((order) => (
+                    <div 
+                      key={order._id} 
+                      style={{
+                        background: "#fff",
+                        border: "2px solid #dc3545",
+                        borderRadius: "12px",
+                        padding: "16px",
+                        boxShadow: "0 4px 12px rgba(220, 53, 69, 0.1)"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "12px" }}>
+                        <h4 style={{ margin: 0, color: "#dc3545", fontSize: "16px" }}>
+                          Order #{order.orderNumber}
+                        </h4>
                         <span style={{
-                          padding: "4px 12px",
-                          borderRadius: "20px",
-                          fontSize: "12px",
-                          fontWeight: "500",
-                          background: agent.status === "active" ? "#d4edda" : 
-                                     agent.status === "inactive" ? "#f8d7da" : "#fff3cd",
-                          color: agent.status === "active" ? "#155724" : 
-                                 agent.status === "inactive" ? "#721c24" : "#856404"
+                          padding: "4px 8px",
+                          borderRadius: "12px",
+                          fontSize: "11px",
+                          fontWeight: "600",
+                          background: "#dc3545",
+                          color: "white"
                         }}>
-                          {agent.status}
+                          APPROVAL REQUIRED
                         </span>
-                        {agent.isOnline && (
-                          <span style={{
-                            marginLeft: "8px",
-                            padding: "2px 8px",
-                            borderRadius: "10px",
-                            fontSize: "10px",
-                            background: "#28a745",
-                            color: "white"
-                          }}>
-                            ONLINE
-                          </span>
-                        )}
-                        {agent.readyForDelivery && (
-                          <span style={{
-                            marginLeft: "8px",
-                            padding: "2px 8px",
-                            borderRadius: "10px",
-                            fontSize: "10px",
+                      </div>
+                      
+                      <div style={{ marginBottom: "12px", fontSize: "14px", color: "#666" }}>
+                        <div style={{ marginBottom: "4px" }}>
+                          👤 <strong>{order.buyerDetails?.name || order.customer}</strong>
+                        </div>
+                        <div style={{ marginBottom: "4px" }}>
+                          📞 {order.buyerDetails?.phone || order.customerPhone}
+                        </div>
+                        <div style={{ marginBottom: "4px" }}>
+                          💰 ₹{order.finalAmount?.toLocaleString('en-IN') || order.amount?.toLocaleString('en-IN')}
+                        </div>
+                        <div style={{ marginBottom: "4px" }}>
+                          🏢 From: <strong>{order.hubTracking?.sellerHubName || order.hubInfo?.hubName}</strong>
+                        </div>
+                        <div style={{ marginBottom: "4px" }}>
+                          📦 Items: {order.items?.length || order.itemCount} products
+                        </div>
+                        <div style={{ fontSize: "12px", color: "#999" }}>
+                          Arrived: {order.hubTracking?.arrivedAtSellerHub ? 
+                            new Date(order.hubTracking.arrivedAtSellerHub).toLocaleString('en-IN') : 
+                            new Date(order.arrivedAt || order.createdAt).toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          onClick={() => viewHubOrderDetails(order)}
+                          style={{
+                            flex: 1,
+                            padding: "8px",
                             background: "#17a2b8",
-                            color: "white"
-                          }}>
-                            ✓ READY
-                          </span>
-                        )}
-                        {agent.isBusy && (
-                          <span style={{
-                            marginLeft: "8px",
-                            padding: "2px 8px",
-                            borderRadius: "10px",
-                            fontSize: "10px",
-                            background: "#ffc107",
-                            color: "#212529"
-                          }}>
-                            BUSY
-                          </span>
-                        )}
-                      </td>
-                      <td style={{ padding: "16px" }}>
-                        <div style={{ fontSize: "14px" }}>
-                          <div>{agent.vehicleInfo?.type || "Not specified"}</div>
-                          <div style={{ color: "#666", fontSize: "12px" }}>{agent.vehicleInfo?.number || ""}</div>
-                        </div>
-                      </td>
-                      <td style={{ padding: "16px" }}>
-                        <div style={{ fontSize: "14px" }}>
-                          <div>{agent.totalDeliveries || 0}</div>
-                          <div style={{ color: "#666", fontSize: "12px" }}>
-                            ⭐ {agent.rating ? agent.rating.toFixed(1) : "0.0"}
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "600"
+                          }}
+                        >
+                          👁️ View Details
+                        </button>
+                        <button
+                          onClick={() => approveHubOrder(order._id)}
+                          style={{
+                            flex: 1,
+                            padding: "8px",
+                            background: "#28a745",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "6px",
+                            cursor: "pointer",
+                            fontSize: "13px",
+                            fontWeight: "600"
+                          }}
+                        >
+                          ✅ Approve & Dispatch
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* No Pending Orders Message */}
+            {pendingHubOrders.length === 0 && (
+              <div style={{ 
+                background: "#d4edda", 
+                border: "1px solid #c3e6cb", 
+                borderRadius: "8px", 
+                padding: "20px", 
+                textAlign: "center",
+                color: "#155724"
+              }}>
+                <h3 style={{ margin: "0 0 8px 0" }}>✅ All Clear!</h3>
+                <p style={{ margin: 0 }}>No orders are currently waiting for your approval.</p>
+              </div>
+            )}
+              </>
+            )}
+
+            {/* Approved Orders Tab */}
+            {activeHubTab === "approved" && (
+              <>
+                {approvedHubOrders.length > 0 ? (
+                  <div style={{ 
+                    background: "linear-gradient(135deg, #f8fff8 0%, #e6ffe6 100%)", 
+                    padding: "24px", 
+                    borderRadius: "12px", 
+                    marginBottom: "20px",
+                    border: "2px solid #28a745"
+                  }}>
+                    <h2 style={{ marginBottom: "20px", color: "#28a745", display: "flex", alignItems: "center", gap: "8px" }}>
+                      ✅ Approved Orders ({approvedHubOrders.length})
+                    </h2>
+                    <p style={{ marginBottom: "20px", color: "#666", fontSize: "14px" }}>
+                      These orders have been approved by you and are either in transit or delivered to customer district hubs.
+                    </p>
+                    
+                    <div style={{ 
+                      display: "grid", 
+                      gridTemplateColumns: "repeat(auto-fill, minmax(350px, 1fr))", 
+                      gap: "15px" 
+                    }}>
+                      {approvedHubOrders.map((order) => (
+                        <div 
+                          key={order._id} 
+                          style={{
+                            background: "#fff",
+                            border: "2px solid #28a745",
+                            borderRadius: "12px",
+                            padding: "16px",
+                            boxShadow: "0 4px 12px rgba(40, 167, 69, 0.1)"
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "12px" }}>
+                            <h4 style={{ margin: 0, color: "#28a745", fontSize: "16px" }}>
+                              Order #{order.orderNumber}
+                            </h4>
+                            <span style={{
+                              padding: "4px 8px",
+                              borderRadius: "12px",
+                              fontSize: "11px",
+                              fontWeight: "600",
+                              background: order.hubTracking?.status === "delivered" ? "#17a2b8" : "#28a745",
+                              color: "white"
+                            }}>
+                              {order.hubTracking?.status === "delivered" ? "DELIVERED" : 
+                               order.hubTracking?.status === "in_transit_to_customer" ? "IN TRANSIT" : "APPROVED"}
+                            </span>
                           </div>
-                        </div>
-                      </td>
-                      <td style={{ padding: "16px" }}>
-                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                          <button
-                            onClick={() => editDeliveryAgent(agent)}
-                            style={{
-                              padding: "6px 12px",
-                              border: "1px solid #007bff",
-                              background: "white",
-                              color: "#007bff",
-                              borderRadius: "4px",
-                              cursor: "pointer",
-                              fontSize: "12px"
-                            }}
-                          >
-                            Edit
-                          </button>
                           
-                          {agent.status === "pending" && (
-                            <>
-                              <button
-                                onClick={() => handleDeliveryStatusUpdate(agent.agentId, "active")}
-                                style={{
-                                  padding: "6px 12px",
-                                  border: "none",
-                                  background: "#28a745",
-                                  color: "white",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                  fontSize: "12px"
-                                }}
-                              >
-                                Approve
-                              </button>
-                              <button
-                                onClick={() => handleDeliveryStatusUpdate(agent.agentId, "inactive")}
-                                style={{
-                                  padding: "6px 12px",
-                                  border: "none",
-                                  background: "#dc3545",
-                                  color: "white",
-                                  borderRadius: "4px",
-                                  cursor: "pointer",
-                                  fontSize: "12px"
-                                }}
-                              >
-                                Reject
-                              </button>
-                            </>
-                          )}
+                          <div style={{ marginBottom: "12px", fontSize: "14px", color: "#666" }}>
+                            <div style={{ marginBottom: "4px" }}>
+                              👤 <strong>{order.buyerDetails?.name || order.customer}</strong>
+                            </div>
+                            <div style={{ marginBottom: "4px" }}>
+                              📞 {order.buyerDetails?.phone || order.customerPhone}
+                            </div>
+                            <div style={{ marginBottom: "4px" }}>
+                              💰 ₹{order.finalAmount?.toLocaleString('en-IN') || order.amount?.toLocaleString('en-IN')}
+                            </div>
+                            <div style={{ marginBottom: "4px" }}>
+                              🏢 Route: <strong>{order.hubTracking?.sellerHubName || order.hubInfo?.hubName}</strong> → <strong>{order.hubTracking?.customerHubName || "Customer Hub"}</strong>
+                            </div>
+                            <div style={{ marginBottom: "4px" }}>
+                              📦 Items: {order.items?.length || order.itemCount} products
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#999" }}>
+                              Approved: {order.hubTracking?.approvedAt ? 
+                                new Date(order.hubTracking.approvedAt).toLocaleString('en-IN') : 
+                                new Date(order.updatedAt).toLocaleString('en-IN')}
+                            </div>
+                            {order.hubTracking?.deliveredAt && (
+                              <div style={{ fontSize: "12px", color: "#28a745", fontWeight: "600" }}>
+                                Delivered: {new Date(order.hubTracking.deliveredAt).toLocaleString('en-IN')}
+                              </div>
+                            )}
+                          </div>
                           
-                          {agent.status === "active" && (
+                          <div style={{ display: "flex", gap: "8px" }}>
                             <button
-                              onClick={() => handleDeliveryStatusUpdate(agent.agentId, "inactive")}
+                              onClick={() => viewHubOrderDetails(order)}
                               style={{
-                                padding: "6px 12px",
+                                flex: 1,
+                                padding: "8px",
+                                background: "#17a2b8",
+                                color: "#fff",
                                 border: "none",
-                                background: "#ffc107",
-                                color: "white",
-                                borderRadius: "4px",
+                                borderRadius: "6px",
                                 cursor: "pointer",
-                                fontSize: "12px"
+                                fontSize: "13px",
+                                fontWeight: "600"
                               }}
                             >
-                              Deactivate
+                              👁️ View Details
                             </button>
-                          )}
-                          
-                          {agent.status === "inactive" && (
                             <button
-                              onClick={() => handleDeliveryStatusUpdate(agent.agentId, "active")}
+                              onClick={() => {
+                                // Track order functionality
+                                toast.info(`Tracking Order #${order.orderNumber}`);
+                              }}
+                              style={{
+                                flex: 1,
+                                padding: "8px",
+                                background: "#6c757d",
+                                color: "#fff",
+                                border: "none",
+                                borderRadius: "6px",
+                                cursor: "pointer",
+                                fontSize: "13px",
+                                fontWeight: "600"
+                              }}
+                            >
+                              📍 Track Order
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ 
+                    background: "#f8f9fa", 
+                    border: "1px solid #dee2e6", 
+                    borderRadius: "8px", 
+                    padding: "20px", 
+                    textAlign: "center",
+                    color: "#6c757d"
+                  }}>
+                    <h3 style={{ margin: "0 0 8px 0" }}>📋 No Approved Orders</h3>
+                    <p style={{ margin: 0 }}>You haven't approved any orders yet. Approved orders will appear here.</p>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* All Hub Orders - Order Tracking System */}
+            <div style={{ background: "#fff", padding: "24px", borderRadius: "12px", marginBottom: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                <h2 style={{ margin: 0, color: "#5c4033" }}>
+                  🏢 All Hub Orders - Order Tracking
+                </h2>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <select
+                    style={{
+                      padding: "8px 12px",
+                      border: "2px solid #5c4033",
+                      borderRadius: "6px",
+                      fontSize: "14px",
+                      cursor: "pointer",
+                      background: "#fff",
+                      color: "#5c4033"
+                    }}
+                  >
+                    <option value="all">All Orders</option>
+                    <option value="at_seller_hub">At Seller Hub</option>
+                    <option value="in_transit">In Transit</option>
+                    <option value="at_customer_hub">At Customer Hub</option>
+                    <option value="delivered">Delivered</option>
+                  </select>
+                  <button
+                    onClick={() => {
+                      const user = auth.currentUser;
+                      if (user) {
+                        fetchPendingHubOrders(user);
+                        fetchApprovedHubOrders(user);
+                        fetchAdminNotifications(user);
+                        fetchOrders(user);
+                      }
+                    }}
+                    style={{
+                      padding: "8px 16px",
+                      background: "#28a745",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "14px",
+                      fontWeight: "600"
+                    }}
+                  >
+                    🔄 Refresh
+                  </button>
+                </div>
+              </div>
+
+              {/* Order Tracking Table */}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid #eee", background: "#faf7f2" }}>
+                      <th style={{ padding: "16px", textAlign: "left", fontSize: "14px", color: "#5c4033", fontWeight: "600" }}>Order ID</th>
+                      <th style={{ padding: "16px", textAlign: "left", fontSize: "14px", color: "#5c4033", fontWeight: "600" }}>Customer</th>
+                      <th style={{ padding: "16px", textAlign: "left", fontSize: "14px", color: "#5c4033", fontWeight: "600" }}>Current Stage</th>
+                      <th style={{ padding: "16px", textAlign: "left", fontSize: "14px", color: "#5c4033", fontWeight: "600" }}>Hub Route</th>
+                      <th style={{ padding: "16px", textAlign: "left", fontSize: "14px", color: "#5c4033", fontWeight: "600" }}>Amount</th>
+                      <th style={{ padding: "16px", textAlign: "left", fontSize: "14px", color: "#5c4033", fontWeight: "600" }}>Overall Status</th>
+                      <th style={{ padding: "16px", textAlign: "left", fontSize: "14px", color: "#5c4033", fontWeight: "600" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Pending Hub Orders */}
+                    {pendingHubOrders.map((order) => (
+                      <tr key={`pending-${order._id}`} style={{ borderBottom: "1px solid #f1e9e1", background: "#fff5f5" }}>
+                        <td style={{ padding: "16px" }}>
+                          <div style={{ fontWeight: "600", color: "#dc3545", marginBottom: "4px" }}>
+                            #{order.orderNumber}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#666" }}>
+                            {new Date(order.createdAt || order.arrivedAt).toLocaleDateString('en-IN')}
+                          </div>
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <div style={{ fontWeight: "500", color: "#5c4033", marginBottom: "2px" }}>
+                            {order.buyerDetails?.name || order.customer}
+                          </div>
+                          <div style={{ fontSize: "12px", color: "#666" }}>
+                            📞 {order.buyerDetails?.phone || order.customerPhone}
+                          </div>
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <span style={{
+                            padding: "6px 12px",
+                            borderRadius: "20px",
+                            fontSize: "12px",
+                            fontWeight: "600",
+                            background: "#dc3545",
+                            color: "white"
+                          }}>
+                            🏢 At Seller Hub
+                          </span>
+                          <div style={{ fontSize: "11px", color: "#666", marginTop: "4px" }}>
+                            ⚠️ Awaiting Approval
+                          </div>
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <div style={{ fontSize: "13px", color: "#666" }}>
+                            <div><strong>From:</strong> {order.hubTracking?.sellerHubName || order.hubInfo?.hubName}</div>
+                            <div><strong>To:</strong> Customer Hub</div>
+                          </div>
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <div style={{ fontWeight: "700", color: "#5c4033", fontSize: "16px" }}>
+                            ₹{(order.finalAmount || order.totalAmount || order.amount || 0).toLocaleString('en-IN')}
+                          </div>
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <span style={{
+                            padding: "4px 8px",
+                            borderRadius: "12px",
+                            fontSize: "11px",
+                            fontWeight: "600",
+                            background: "#ffc107",
+                            color: "#000"
+                          }}>
+                            PENDING APPROVAL
+                          </span>
+                        </td>
+                        <td style={{ padding: "16px" }}>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <button
+                              onClick={() => viewHubOrderDetails(order)}
                               style={{
                                 padding: "6px 12px",
+                                fontSize: "12px",
+                                border: "1px solid #17a2b8",
+                                background: "transparent",
+                                color: "#17a2b8",
+                                borderRadius: "4px",
+                                cursor: "pointer",
+                                fontWeight: "500"
+                              }}
+                            >
+                              👁️ View
+                            </button>
+                            <button
+                              onClick={() => approveHubOrder(order._id)}
+                              style={{
+                                padding: "6px 12px",
+                                fontSize: "12px",
                                 border: "none",
                                 background: "#28a745",
                                 color: "white",
                                 borderRadius: "4px",
                                 cursor: "pointer",
-                                fontSize: "12px"
+                                fontWeight: "600"
                               }}
                             >
-                              Activate
+                              ✅ Approve
                             </button>
-                          )}
-                          
-                          <button
-                            onClick={() => deleteDeliveryAgent(agent.agentId)}
-                            style={{
-                              padding: "6px 12px",
-                              border: "none",
-                              background: "#dc3545",
-                              color: "white",
-                              borderRadius: "4px",
-                              cursor: "pointer",
-                              fontSize: "12px"
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+
+                    {/* All Other Orders with Hub Tracking */}
+                    {orders
+                      .filter(order => order.hubTracking || order.orderStatus === 'in_transit_to_customer_hub' || order.orderStatus === 'at_customer_hub')
+                      .map((order) => {
+                        const hubStatus = order.hubTracking?.currentLocation || order.orderStatus;
+                        const isApproved = order.hubTracking?.approvedByAdmin;
+                        
+                        let stageInfo = {
+                          stage: "🏢 At Seller Hub",
+                          stageColor: "#ffc107",
+                          statusText: "PROCESSING",
+                          statusColor: "#ffc107"
+                        };
+
+                        if (hubStatus === 'in_transit_to_customer_hub' || order.orderStatus === 'in_transit_to_customer_hub') {
+                          stageInfo = {
+                            stage: "🚚 In Transit",
+                            stageColor: "#17a2b8",
+                            statusText: "APPROVED & DISPATCHED",
+                            statusColor: "#28a745"
+                          };
+                        } else if (hubStatus === 'customer_hub' || hubStatus === 'at_customer_hub' || order.orderStatus === 'at_customer_hub') {
+                          stageInfo = {
+                            stage: "📦 At Customer Hub",
+                            stageColor: "#28a745",
+                            statusText: "READY FOR PICKUP",
+                            statusColor: "#28a745"
+                          };
+                        } else if (order.orderStatus === 'delivered') {
+                          stageInfo = {
+                            stage: "✅ Delivered",
+                            stageColor: "#28a745",
+                            statusText: "COMPLETED",
+                            statusColor: "#28a745"
+                          };
+                        }
+
+                        return (
+                          <tr key={`order-${order._id}`} style={{ borderBottom: "1px solid #f1e9e1" }}>
+                            <td style={{ padding: "16px" }}>
+                              <div style={{ fontWeight: "600", color: "#5c4033", marginBottom: "4px" }}>
+                                #{order.orderNumber}
+                              </div>
+                              <div style={{ fontSize: "12px", color: "#666" }}>
+                                {new Date(order.createdAt).toLocaleDateString('en-IN')}
+                              </div>
+                            </td>
+                            <td style={{ padding: "16px" }}>
+                              <div style={{ fontWeight: "500", color: "#5c4033", marginBottom: "2px" }}>
+                                {order.buyerDetails?.name}
+                              </div>
+                              <div style={{ fontSize: "12px", color: "#666" }}>
+                                📞 {order.buyerDetails?.phone}
+                              </div>
+                            </td>
+                            <td style={{ padding: "16px" }}>
+                              <span style={{
+                                padding: "6px 12px",
+                                borderRadius: "20px",
+                                fontSize: "12px",
+                                fontWeight: "600",
+                                background: stageInfo.stageColor,
+                                color: "white"
+                              }}>
+                                {stageInfo.stage}
+                              </span>
+                              {isApproved && (
+                                <div style={{ fontSize: "11px", color: "#28a745", marginTop: "4px" }}>
+                                  ✅ Admin Approved
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: "16px" }}>
+                              <div style={{ fontSize: "13px", color: "#666" }}>
+                                {order.hubTracking ? (
+                                  <>
+                                    <div><strong>From:</strong> {order.hubTracking.sellerHubName}</div>
+                                    <div><strong>To:</strong> {order.hubTracking.customerHubName || 'Customer Hub'}</div>
+                                  </>
+                                ) : (
+                                  <div>Hub tracking not available</div>
+                                )}
+                              </div>
+                            </td>
+                            <td style={{ padding: "16px" }}>
+                              <div style={{ fontWeight: "700", color: "#5c4033", fontSize: "16px" }}>
+                                ₹{(order.finalAmount || order.total || order.totalAmount || 0).toLocaleString('en-IN')}
+                              </div>
+                            </td>
+                            <td style={{ padding: "16px" }}>
+                              <span style={{
+                                padding: "4px 8px",
+                                borderRadius: "12px",
+                                fontSize: "11px",
+                                fontWeight: "600",
+                                background: stageInfo.statusColor,
+                                color: "white"
+                              }}>
+                                {stageInfo.statusText}
+                              </span>
+                            </td>
+                            <td style={{ padding: "16px" }}>
+                              <button
+                                onClick={() => viewOrderDetails(order)}
+                                style={{
+                                  padding: "6px 12px",
+                                  fontSize: "12px",
+                                  border: "1px solid #17a2b8",
+                                  background: "transparent",
+                                  color: "#17a2b8",
+                                  borderRadius: "4px",
+                                  cursor: "pointer",
+                                  fontWeight: "500"
+                                }}
+                              >
+                                👁️ View Details
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+
+                {/* Empty State */}
+                {pendingHubOrders.length === 0 && orders.filter(order => order.hubTracking).length === 0 && (
+                  <div style={{ textAlign: "center", padding: "40px", color: "#666" }}>
+                    <div style={{ fontSize: "48px", marginBottom: "16px" }}>📦</div>
+                    <div style={{ fontSize: "18px", fontWeight: "500", marginBottom: "8px" }}>
+                      No hub orders found
+                    </div>
+                    <div style={{ fontSize: "14px" }}>
+                      Orders will appear here when they move through the hub system
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Recent Notifications Summary */}
+            <div style={{ background: "#fff", padding: "24px", borderRadius: "12px", marginBottom: "20px" }}>
+              <h3 style={{ marginBottom: "16px", color: "#5c4033" }}>
+                📋 Recent Notifications ({adminNotifications.length})
+              </h3>
               
-              {deliveryAgents.length === 0 && (
-                <div style={{ padding: "40px", textAlign: "center", color: "#666" }}>
-                  No delivery agents found. Click "Add Delivery Boy" to get started.
+              {adminNotifications.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "20px", color: "#666", background: "#f8f9fa", borderRadius: "8px" }}>
+                  <div style={{ fontSize: "24px", marginBottom: "8px" }}>📭</div>
+                  <div>No recent notifications</div>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "300px", overflowY: "auto" }}>
+                  {adminNotifications.slice(0, 5).map((notification) => (
+                    <div 
+                      key={notification._id} 
+                      style={{
+                        border: `1px solid ${notification.read ? "#e9ecef" : "#ffc107"}`,
+                        borderRadius: "6px",
+                        padding: "12px",
+                        background: notification.read ? "#f8f9fa" : "#fffbf0",
+                        fontSize: "14px"
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "4px" }}>
+                        <span style={{ fontWeight: "600", color: notification.read ? "#666" : "#5c4033" }}>
+                          {notification.title}
+                        </span>
+                        <span style={{ fontSize: "11px", color: "#999" }}>
+                          {new Date(notification.createdAt).toLocaleDateString('en-IN')}
+                        </span>
+                      </div>
+                      <div style={{ color: "#666", fontSize: "13px" }}>
+                        {notification.message}
+                      </div>
+                      {!notification.read && (
+                        <button
+                          onClick={() => markAdminNotificationAsRead(notification._id)}
+                          style={{
+                            marginTop: "8px",
+                            padding: "4px 8px",
+                            background: "#28a745",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: "4px",
+                            cursor: "pointer",
+                            fontSize: "11px"
+                          }}
+                        >
+                          Mark Read
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {adminNotifications.length > 5 && (
+                    <div style={{ textAlign: "center", padding: "8px", color: "#666", fontSize: "13px" }}>
+                      ... and {adminNotifications.length - 5} more notifications
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Hub Order Details Modal */}
+            {showHubOrderModal && selectedHubOrder && (
+              <div 
+                onClick={closeHubOrderModal}
+                style={{
+                  position: "fixed",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: "rgba(0,0,0,0.6)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 9999,
+                  padding: "20px"
+                }}
+              >
+                <div 
+                  onClick={(e) => e.stopPropagation()}
+                  style={{
+                    background: "#fff",
+                    borderRadius: "16px",
+                    maxWidth: "800px",
+                    width: "100%",
+                    maxHeight: "90vh",
+                    overflow: "auto",
+                    boxShadow: "0 20px 60px rgba(0,0,0,0.3)"
+                  }}
+                >
+                  {/* Modal Header */}
+                  <div style={{
+                    padding: "24px",
+                    borderBottom: "1px solid #eee",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    position: "sticky",
+                    top: 0,
+                    background: "#fff",
+                    zIndex: 1
+                  }}>
+                    <div>
+                      <h2 style={{ margin: 0, color: "#5c4033" }}>Hub Order Details</h2>
+                      <p style={{ margin: "4px 0 0 0", color: "#666", fontSize: "14px" }}>
+                        Order #{selectedHubOrder.orderNumber}
+                      </p>
+                    </div>
+                    <button
+                      onClick={closeHubOrderModal}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        fontSize: "24px",
+                        cursor: "pointer",
+                        color: "#666",
+                        padding: "0",
+                        width: "32px",
+                        height: "32px",
+                        borderRadius: "50%",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center"
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  
+                  {/* Modal Content */}
+                  <div style={{ padding: "24px" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "30px", marginBottom: "24px" }}>
+                      {/* Customer Information */}
+                      <div>
+                        <h3 style={{ marginBottom: "16px", color: "#5c4033" }}>Customer Information</h3>
+                        <div style={{ background: "#f9f9f9", padding: "16px", borderRadius: "8px" }}>
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>Name:</strong> {selectedHubOrder.customer}
+                          </div>
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>Email:</strong> {selectedHubOrder.customerEmail}
+                          </div>
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>Phone:</strong> {selectedHubOrder.customerPhone}
+                          </div>
+                          <div>
+                            <strong>Address:</strong><br />
+                            {selectedHubOrder.customerAddress.street && `${selectedHubOrder.customerAddress.street}, `}
+                            {selectedHubOrder.customerAddress.city}, {selectedHubOrder.customerAddress.state} - {selectedHubOrder.customerAddress.pincode}
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Hub Information */}
+                      <div>
+                        <h3 style={{ marginBottom: "16px", color: "#5c4033" }}>Hub Information</h3>
+                        <div style={{ background: "#f9f9f9", padding: "16px", borderRadius: "8px" }}>
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>Hub Name:</strong> {selectedHubOrder.hubInfo.hubName}
+                          </div>
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>District:</strong> {selectedHubOrder.hubInfo.hubDistrict}
+                          </div>
+                          <div style={{ marginBottom: "8px" }}>
+                            <strong>Arrived At:</strong> {new Date(selectedHubOrder.arrivedAt).toLocaleString('en-IN')}
+                          </div>
+                          <div>
+                            <span style={{
+                              background: "#e3f2fd",
+                              color: "#1976d2",
+                              padding: "4px 12px",
+                              borderRadius: "12px",
+                              fontSize: "12px",
+                              fontWeight: "600"
+                            }}>
+                              Order (At Seller Hub)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Order Items */}
+                    <div style={{ marginBottom: "24px" }}>
+                      <h3 style={{ marginBottom: "16px", color: "#5c4033" }}>Order Items</h3>
+                      <div style={{ background: "#f9f9f9", padding: "16px", borderRadius: "8px" }}>
+                        {selectedHubOrder.items.map((item, index) => (
+                          <div key={index} style={{ 
+                            display: "flex", 
+                            justifyContent: "space-between", 
+                            alignItems: "center",
+                            padding: "12px 0",
+                            borderBottom: index < selectedHubOrder.items.length - 1 ? "1px solid #eee" : "none"
+                          }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                              {item.image && (
+                                <img 
+                                  src={`http://localhost:5000/uploads/${item.image}`}
+                                  alt={item.title}
+                                  style={{ 
+                                    width: "40px", 
+                                    height: "40px", 
+                                    objectFit: "cover", 
+                                    borderRadius: "6px" 
+                                  }}
+                                />
+                              )}
+                              <div>
+                                <div style={{ fontWeight: "500", color: "#5c4033" }}>{item.title}</div>
+                                {item.variant && (
+                                  <div style={{ fontSize: "12px", color: "#666" }}>
+                                    {item.variant.name}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontWeight: "600", color: "#5c4033" }}>
+                                ₹{(item.variant?.price || 0).toLocaleString('en-IN')}
+                              </div>
+                              <div style={{ fontSize: "12px", color: "#666" }}>
+                                Qty: {item.quantity}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        
+                        {/* Total */}
+                        <div style={{ 
+                          marginTop: "16px", 
+                          paddingTop: "16px", 
+                          borderTop: "2px solid #ddd",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center"
+                        }}>
+                          <div style={{ fontSize: "16px", fontWeight: "600", color: "#5c4033" }}>
+                            Total Amount:
+                          </div>
+                          <div style={{ fontSize: "20px", fontWeight: "700", color: "#5c4033" }}>
+                            ₹{selectedHubOrder.totalAmount.toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                      <button
+                        onClick={closeHubOrderModal}
+                        style={{
+                          padding: "12px 24px",
+                          fontSize: "14px",
+                          border: "1px solid #ddd",
+                          background: "#fff",
+                          color: "#666",
+                          borderRadius: "8px",
+                          cursor: "pointer"
+                        }}
+                      >
+                        Close
+                      </button>
+                      <button
+                        onClick={() => {
+                          approveHubOrder(selectedHubOrder._id);
+                          closeHubOrderModal();
+                        }}
+                        style={{
+                          padding: "12px 24px",
+                          fontSize: "14px",
+                          border: "none",
+                          background: "#28a745",
+                          color: "white",
+                          borderRadius: "8px",
+                          cursor: "pointer",
+                          fontWeight: "600"
+                        }}
+                      >
+                        ✓ Approve & Dispatch to Customer Hub
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+            </div>
+          </>
+        )}
+
+        {activeSection === "delivery" && (
+          <>
+            <h1 style={{ marginBottom: "20px" }}>Delivery Boys Management</h1>
+            
+            {/* Stats Cards */}
+            <div style={{ 
+              display: "grid", 
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", 
+              gap: "20px", 
+              marginBottom: "30px" 
+            }}>
+              <div style={{
+                background: "#fff",
+                padding: "20px",
+                borderRadius: "12px",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
+              }}>
+                <h3 style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>Total Agents</h3>
+                <p style={{ fontSize: "28px", fontWeight: "bold", color: "#5c4033", margin: 0 }}>
+                  {deliveryAgents.length}
+                </p>
+              </div>
+              
+              <div style={{
+                background: "#fff",
+                padding: "20px",
+                borderRadius: "12px",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
+              }}>
+                <h3 style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>Active Agents</h3>
+                <p style={{ fontSize: "28px", fontWeight: "bold", color: "#2ecc71", margin: 0 }}>
+                  {deliveryAgents.filter(a => a.status === 'active').length}
+                </p>
+              </div>
+              
+              <div style={{
+                background: "#fff",
+                padding: "20px",
+                borderRadius: "12px",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
+              }}>
+                <h3 style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>Online Now</h3>
+                <p style={{ fontSize: "28px", fontWeight: "bold", color: "#3498db", margin: 0 }}>
+                  {deliveryAgents.filter(a => a.isOnline).length}
+                </p>
+              </div>
+              
+              <div style={{
+                background: "#fff",
+                padding: "20px",
+                borderRadius: "12px",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
+              }}>
+                <h3 style={{ fontSize: "14px", color: "#666", marginBottom: "8px" }}>Total Deliveries</h3>
+                <p style={{ fontSize: "28px", fontWeight: "bold", color: "#9b59b6", margin: 0 }}>
+                  {deliveryAgents.reduce((sum, a) => sum + (a.totalDeliveries || 0), 0)}
+                </p>
+              </div>
+            </div>
+
+            {/* Filter Tabs */}
+            <div style={{ 
+              display: "flex", 
+              gap: "10px", 
+              marginBottom: "20px",
+              flexWrap: "wrap"
+            }}>
+              {['all', 'active', 'inactive', 'suspended'].map(filter => (
+                <button
+                  key={filter}
+                  onClick={() => setDeliveryFilter(filter)}
+                  style={{
+                    padding: "10px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: deliveryFilter === filter ? "#5c4033" : "#fff",
+                    color: deliveryFilter === filter ? "#fff" : "#5c4033",
+                    cursor: "pointer",
+                    fontWeight: 500,
+                    textTransform: "capitalize",
+                    boxShadow: "0 2px 4px rgba(0,0,0,0.08)",
+                    transition: "all 0.2s"
+                  }}
+                >
+                  {filter === 'all' ? 'All Agents' : `${filter}`}
+                </button>
+              ))}
+            </div>
+
+            {/* Delivery Agents Table */}
+            <div style={{
+              background: "#fff",
+              borderRadius: "12px",
+              padding: "24px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.08)"
+            }}>
+              {deliveryAgents.length === 0 ? (
+                <p style={{ textAlign: "center", color: "#666", padding: "40px" }}>
+                  No delivery agents found. Register agents to get started.
+                </p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "2px solid #eee" }}>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Agent ID</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Name</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Phone</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Email</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Status</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Online</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Completed</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Rating</th>
+                        <th style={{ padding: "12px", textAlign: "left", fontWeight: 600, color: "#5c4033" }}>Earnings</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deliveryAgents
+                        .filter(agent => deliveryFilter === 'all' || agent.status === deliveryFilter)
+                        .map((agent) => (
+                          <tr key={agent._id} style={{ borderBottom: "1px solid #eee" }}>
+                            <td style={{ padding: "12px", color: "#666" }}>{agent.agentId}</td>
+                            <td style={{ padding: "12px", color: "#333", fontWeight: 500 }}>{agent.name}</td>
+                            <td style={{ padding: "12px", color: "#666" }}>{agent.phone}</td>
+                            <td style={{ padding: "12px", color: "#666" }}>{agent.email}</td>
+                            <td style={{ padding: "12px" }}>
+                              <span style={{
+                                padding: "4px 12px",
+                                borderRadius: "12px",
+                                fontSize: "12px",
+                                fontWeight: 600,
+                                background: agent.status === 'active' ? '#e6f4ea' : 
+                                           agent.status === 'inactive' ? '#fff4e6' : '#fee',
+                                color: agent.status === 'active' ? '#1e7e34' : 
+                                       agent.status === 'inactive' ? '#a87300' : '#c0392b'
+                              }}>
+                                {agent.status}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px" }}>
+                              <span style={{
+                                display: "inline-block",
+                                width: "10px",
+                                height: "10px",
+                                borderRadius: "50%",
+                                background: agent.isOnline ? "#2ecc71" : "#95a5a6",
+                                marginRight: "8px"
+                              }}></span>
+                              {agent.isOnline ? "Online" : "Offline"}
+                            </td>
+                            <td style={{ padding: "12px", color: "#666" }}>{agent.totalDeliveries || 0}</td>
+                            <td style={{ padding: "12px", color: "#666" }}>
+                              {agent.rating ? `⭐ ${agent.rating.toFixed(1)}` : 'N/A'}
+                            </td>
+                            <td style={{ padding: "12px", color: "#666", fontWeight: 500 }}>
+                              ₹{agent.earnings?.total || agent.earnings || 0}
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>
           </>
         )}
 
-        {activeSection === "settings" && (
+        {/* Hubs Section */}
+        {activeSection === "hubs" && (
           <>
-            <h1 style={{ marginBottom: "20px" }}>Settings</h1>
-            
-            <div style={{ background: "#fff", padding: "24px", borderRadius: "12px" }}>
-              <h2 style={{ marginBottom: "20px" }}>System Settings</h2>
-              <p>Settings panel will be implemented here.</p>
+            <h1 style={{ marginBottom: "20px" }}>Hub Management</h1>
+
+            {/* Filter Tabs */}
+            <div style={{ marginBottom: "20px", display: "flex", gap: "10px" }}>
+              <button
+                onClick={() => setActiveHubTab("hubs")}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  border: "2px solid #5c4033",
+                  background: activeHubTab === "hubs" ? "#5c4033" : "white",
+                  color: activeHubTab === "hubs" ? "white" : "#5c4033",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  transition: "all 0.3s ease"
+                }}
+              >
+                Hubs ({hubs.length})
+              </button>
+              <button
+                onClick={() => setActiveHubTab("managers")}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: "8px",
+                  border: "2px solid #5c4033",
+                  background: activeHubTab === "managers" ? "#5c4033" : "white",
+                  color: activeHubTab === "managers" ? "white" : "#5c4033",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  fontWeight: "600",
+                  transition: "all 0.3s ease"
+                }}
+              >
+                Hub Managers ({hubManagers.length})
+              </button>
             </div>
+
+            {/* Hubs Tab */}
+            {activeHubTab === "hubs" && (
+              <div style={{ background: "#fff", padding: "24px", borderRadius: "12px" }}>
+                <h2 style={{ marginBottom: "20px" }}>
+                  All Hubs ({hubs.length})
+                </h2>
+                
+                {hubs.length === 0 ? (
+                  <p style={{ textAlign: "center", padding: "40px", color: "#666" }}>
+                    No hubs found. Please seed hubs using the setup script.
+                  </p>
+                ) : (
+                  <div style={{ 
+                    display: "grid", 
+                    gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", 
+                    gap: "20px" 
+                  }}>
+                    {hubs.map((hub) => (
+                      <div 
+                        key={hub.hubId} 
+                        style={{
+                          border: "1px solid #ddd",
+                          borderRadius: "12px",
+                          overflow: "hidden",
+                          cursor: "pointer",
+                          transition: "all 0.3s ease",
+                          background: "#fff"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "translateY(-4px)";
+                          e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow = "none";
+                        }}
+                      >
+                        {/* Hub Header */}
+                        <div style={{ 
+                          background: "linear-gradient(135deg, #5c4033 0%, #7d5a47 100%)",
+                          padding: "20px",
+                          color: "white"
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "8px" }}>
+                            <h3 style={{ 
+                              margin: 0, 
+                              fontSize: "18px", 
+                              fontWeight: "600"
+                            }}>
+                              {hub.name}
+                            </h3>
+                            <span style={{
+                              padding: "4px 10px",
+                              borderRadius: "12px",
+                              fontSize: "11px",
+                              fontWeight: "600",
+                              background: hub.status === 'active' ? "#28a745" : "#ffc107",
+                              color: "white"
+                            }}>
+                              {hub.status === 'active' ? "Active" : "Inactive"}
+                            </span>
+                          </div>
+                          <p style={{ margin: "0", fontSize: "14px", opacity: 0.9 }}>
+                            {hub.district}
+                          </p>
+                          <p style={{ margin: "4px 0 0 0", fontSize: "12px", opacity: 0.7, fontFamily: "monospace" }}>
+                            {hub.hubId}
+                          </p>
+                        </div>
+                        
+                        {/* Hub Info */}
+                        <div style={{ padding: "16px" }}>
+                          <div style={{ marginBottom: "12px" }}>
+                            <div style={{ fontSize: "13px", color: "#666", marginBottom: "6px" }}>
+                              📞 {hub.contactInfo?.phone || 'N/A'}
+                            </div>
+                            <div style={{ fontSize: "13px", color: "#666", marginBottom: "6px", wordBreak: "break-all" }}>
+                              📧 {hub.contactInfo?.email || 'N/A'}
+                            </div>
+                            <div style={{ fontSize: "13px", color: "#666" }}>
+                              📦 <strong>{hub.capacity?.currentOrders || 0}</strong>/{hub.capacity?.maxOrders || 500} orders
+                            </div>
+                          </div>
+
+                          {hub.managerId ? (
+                            <div style={{ 
+                              background: "#f8f9fa",
+                              padding: "12px",
+                              borderRadius: "8px",
+                              marginTop: "12px"
+                            }}>
+                              <p style={{ fontSize: "11px", color: "#999", margin: "0 0 4px 0" }}>Manager:</p>
+                              <p style={{ fontSize: "14px", fontWeight: "600", color: "#5c4033", margin: "0 0 2px 0" }}>
+                                {hub.managerName || 'Unknown'}
+                              </p>
+                              <p style={{ fontSize: "12px", color: "#666", margin: 0, fontFamily: "monospace" }}>
+                                {hub.managerId}
+                              </p>
+                            </div>
+                          ) : (
+                            <select
+                              style={{
+                                width: "100%",
+                                padding: "10px",
+                                border: "2px solid #5c4033",
+                                borderRadius: "8px",
+                                fontSize: "14px",
+                                cursor: "pointer",
+                                background: "#fff",
+                                color: "#5c4033",
+                                fontWeight: "500",
+                                marginTop: "12px"
+                              }}
+                              defaultValue=""
+                            >
+                              <option value="">Assign Manager</option>
+                              {hubManagers.filter(m => !m.hubId).map(manager => (
+                                <option key={manager.managerId} value={manager.managerId}>
+                                  {manager.name}
+                                </option>
+                              ))}
+                            </select>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Managers Tab */}
+            {activeHubTab === "managers" && (
+              <div style={{ background: "#fff", padding: "24px", borderRadius: "12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+                  <h2 style={{ margin: 0 }}>
+                    Hub Managers ({hubManagers.length})
+                  </h2>
+                  <button
+                    onClick={() => setShowCreateManager(true)}
+                    style={{
+                      padding: "10px 20px",
+                      background: "#5c4033",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer",
+                      fontWeight: "600",
+                      fontSize: "14px"
+                    }}
+                  >
+                    + Create Hub Manager
+                  </button>
+                </div>
+
+                {hubManagers.length === 0 ? (
+                  <p style={{ textAlign: "center", padding: "40px", color: "#666" }}>
+                    No hub managers found. Create a manager to get started.
+                  </p>
+                ) : (
+                  <div style={{ 
+                    display: "grid", 
+                    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", 
+                    gap: "20px" 
+                  }}>
+                    {hubManagers.map((manager) => (
+                      <div 
+                        key={manager.managerId} 
+                        style={{
+                          border: "1px solid #ddd",
+                          borderRadius: "12px",
+                          overflow: "hidden",
+                          transition: "all 0.3s ease",
+                          background: "#fff"
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.transform = "translateY(-4px)";
+                          e.currentTarget.style.boxShadow = "0 8px 20px rgba(0,0,0,0.1)";
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.transform = "translateY(0)";
+                          e.currentTarget.style.boxShadow = "none";
+                        }}
+                      >
+                        {/* Manager Header */}
+                        <div style={{ 
+                          background: "linear-gradient(135deg, #3498db 0%, #5dade2 100%)",
+                          padding: "20px",
+                          color: "white"
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+                            <h3 style={{ margin: "0 0 8px 0", fontSize: "18px", fontWeight: "600" }}>
+                              {manager.name}
+                            </h3>
+                            <span style={{
+                              padding: "4px 10px",
+                              borderRadius: "12px",
+                              fontSize: "11px",
+                              fontWeight: "600",
+                              background: manager.status === 'active' ? "#28a745" : 
+                                         manager.status === 'inactive' ? "#dc3545" : "#ffc107",
+                              color: "white"
+                            }}>
+                              {manager.status}
+                            </span>
+                          </div>
+                          <p style={{ margin: "0", fontSize: "12px", opacity: 0.9, fontFamily: "monospace" }}>
+                            {manager.managerId}
+                          </p>
+                        </div>
+                        
+                        {/* Manager Info */}
+                        <div style={{ padding: "16px" }}>
+                          <div style={{ marginBottom: "12px" }}>
+                            <div style={{ fontSize: "13px", color: "#666", marginBottom: "6px" }}>
+                              📧 {manager.email}
+                            </div>
+                            <div style={{ fontSize: "13px", color: "#666", marginBottom: "6px" }}>
+                              📞 {manager.phone}
+                            </div>
+                            {manager.hubName && (
+                              <div style={{ 
+                                fontSize: "13px", 
+                                color: "#5c4033",
+                                background: "#f8f9fa",
+                                padding: "8px",
+                                borderRadius: "6px",
+                                marginTop: "8px"
+                              }}>
+                                🏢 {manager.hubName} ({manager.district})
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </main>
@@ -1840,7 +3863,7 @@ export default function AdminDashboard() {
                   height: "10px",
                   borderRadius: "50%",
                   backgroundColor: (
-                    selectedOrder?.deliveryStatus?.pickedUp ||
+                    selectedOrder?.deliveryStatus?.picked_up ||
                     [
                       'picked_up','shipped','in_transit','out_for_delivery','delivered'
                     ].includes(currentStatus)
@@ -1854,22 +3877,16 @@ export default function AdminDashboard() {
                   width: "10px",
                   height: "10px",
                   borderRadius: "50%",
-                  backgroundColor: (selectedOrder?.deliveryStatus?.delivered || currentStatus === 'delivered') ? "#28a745" : "#dc3545",
+                  backgroundColor: (
+                    selectedOrder?.deliveryStatus?.delivered ||
+                    currentStatus === 'delivered'
+                  ) ? "#28a745" : "#dc3545",
                   display: "inline-block"
                 }}></span>
                 <span style={{ fontSize: "12px", color: "#5c4033" }}>Delivered</span>
               </div>
             </div>
-              );
-            })()}
-
-            {selectedOrder?.deliveryInfo?.agentId && (
-              <div style={{ marginBottom: "16px", fontSize: "13px", color: "#6b4f3a" }}>
-                <strong>Delivery Agent:</strong> {selectedOrder.deliveryInfo.agentId}
-              </div>
-            )}
-
-            {/* Order Timeline removed as requested */}
+            )})()}
 
             {/* Order Items */}
             <div>
@@ -1967,9 +3984,9 @@ export default function AdminDashboard() {
           </div>
         </div>
       )}
-
-      {/* Delivery Agent Modal */}
-      {showDeliveryModal && (
+      
+      {/* Seller Application Details Modal */}
+      {showApplicationModal && selectedApplication && (
         <div style={{
           position: "fixed",
           top: 0,
@@ -1987,7 +4004,7 @@ export default function AdminDashboard() {
             backgroundColor: "#fff",
             borderRadius: "12px",
             padding: "24px",
-            maxWidth: "600px",
+            maxWidth: "800px",
             width: "100%",
             maxHeight: "90vh",
             overflowY: "auto",
@@ -1995,7 +4012,7 @@ export default function AdminDashboard() {
           }}>
             {/* Close Button */}
             <button
-              onClick={() => setShowDeliveryModal(false)}
+              onClick={closeApplicationModal}
               style={{
                 position: "absolute",
                 top: "15px",
@@ -2010,404 +4027,151 @@ export default function AdminDashboard() {
               ×
             </button>
 
-            <h2 style={{ marginBottom: "20px", color: "#5c4033" }}>
-              {editingDeliveryId ? "Edit Delivery Agent" : "Add New Delivery Agent"}
-            </h2>
-
-            <form onSubmit={handleDeliverySubmit}>
-              {/* Basic Information */}
-              <div style={{ marginBottom: "20px" }}>
-                <h3 style={{ marginBottom: "15px", color: "#5c4033", fontSize: "16px" }}>Basic Information</h3>
-                
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", marginBottom: "15px" }}>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Name *</label>
-                    <input
-                      type="text"
-                      value={deliveryForm.name}
-                      onChange={(e) => setDeliveryForm({...deliveryForm, name: e.target.value})}
-                      style={inputStyle}
-                      required
-                      placeholder="Enter full name"
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Phone *</label>
-                    <input
-                      type="tel"
-                      value={deliveryForm.phone}
-                      onChange={(e) => setDeliveryForm({...deliveryForm, phone: e.target.value})}
-                      style={inputStyle}
-                      required
-                      placeholder="10-digit mobile number"
-                      pattern="[6-9][0-9]{9}"
-                    />
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px", marginBottom: "15px" }}>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Email *</label>
-                    <input
-                      type="email"
-                      value={deliveryForm.email}
-                      onChange={(e) => setDeliveryForm({...deliveryForm, email: e.target.value})}
-                      style={inputStyle}
-                      required
-                      placeholder="email@example.com"
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Username *</label>
-                    <input
-                      type="text"
-                      value={deliveryForm.username}
-                      onChange={(e) => setDeliveryForm({...deliveryForm, username: e.target.value})}
-                      style={inputStyle}
-                      required
-                      placeholder="Unique username"
-                      pattern="[a-zA-Z0-9_]+"
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: "15px" }}>
-                  <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>
-                    Password {editingDeliveryId ? "(Leave blank to keep current)" : "*"}
-                  </label>
-                  <input
-                    type="password"
-                    value={deliveryForm.password}
-                    onChange={(e) => setDeliveryForm({...deliveryForm, password: e.target.value})}
-                    style={inputStyle}
-                    required={!editingDeliveryId}
-                    placeholder="Minimum 6 characters"
-                    minLength="6"
-                  />
-                </div>
-              </div>
-
-              {/* Address Information */}
-              <div style={{ marginBottom: "20px" }}>
-                <h3 style={{ marginBottom: "15px", color: "#5c4033", fontSize: "16px" }}>Address</h3>
-                
-                <div style={{ marginBottom: "15px" }}>
-                  <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Street Address</label>
-                  <input
-                    type="text"
-                    value={deliveryForm.address.street}
-                    onChange={(e) => setDeliveryForm({
-                      ...deliveryForm, 
-                      address: {...deliveryForm.address, street: e.target.value}
-                    })}
-                    style={inputStyle}
-                    placeholder="House no, Street name"
-                  />
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>City</label>
-                    <input
-                      type="text"
-                      value={deliveryForm.address.city}
-                      onChange={(e) => setDeliveryForm({
-                        ...deliveryForm, 
-                        address: {...deliveryForm.address, city: e.target.value}
-                      })}
-                      style={inputStyle}
-                      placeholder="City"
-                    />
-                  </div>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>State</label>
-                    <input
-                      type="text"
-                      value={deliveryForm.address.state}
-                      onChange={(e) => setDeliveryForm({
-                        ...deliveryForm, 
-                        address: {...deliveryForm.address, state: e.target.value}
-                      })}
-                      style={inputStyle}
-                      placeholder="State"
-                    />
-                  </div>
-                </div>
-
-                <div style={{ marginTop: "15px" }}>
-                  <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Pincode</label>
-                  <input
-                    type="text"
-                    value={deliveryForm.address.pincode}
-                    onChange={(e) => setDeliveryForm({
-                      ...deliveryForm, 
-                      address: {...deliveryForm.address, pincode: e.target.value}
-                    })}
-                    style={{...inputStyle, width: "200px"}}
-                    placeholder="6-digit pincode"
-                    pattern="[0-9]{6}"
-                  />
-                </div>
-              </div>
-
-              {/* Vehicle Information */}
-              <div style={{ marginBottom: "20px" }}>
-                <h3 style={{ marginBottom: "15px", color: "#5c4033", fontSize: "16px" }}>Vehicle Information</h3>
-                
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Vehicle Type</label>
-                    <select
-                      value={deliveryForm.vehicleInfo.type}
-                      onChange={(e) => setDeliveryForm({
-                        ...deliveryForm, 
-                        vehicleInfo: {...deliveryForm.vehicleInfo, type: e.target.value}
-                      })}
-                      style={inputStyle}
-                    >
-                      <option value="">Select vehicle type</option>
-                      <option value="bicycle">Bicycle</option>
-                      <option value="bike">Motorcycle</option>
-                      <option value="scooter">Scooter</option>
-                      <option value="car">Car</option>
-                      <option value="van">Van</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: "block", marginBottom: "5px", fontWeight: "500" }}>Vehicle Number</label>
-                    <input
-                      type="text"
-                      value={deliveryForm.vehicleInfo.number}
-                      onChange={(e) => setDeliveryForm({
-                        ...deliveryForm, 
-                        vehicleInfo: {...deliveryForm.vehicleInfo, number: e.target.value}
-                      })}
-                      style={inputStyle}
-                      placeholder="Vehicle registration number"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "30px" }}>
-                <button
-                  type="button"
-                  onClick={() => setShowDeliveryModal(false)}
-                  style={buttonSecondary}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  style={{
-                    ...buttonPrimary,
-                    opacity: loading ? 0.7 : 1,
-                    cursor: loading ? "not-allowed" : "pointer"
-                  }}
-                >
-                  {loading ? "Saving..." : (editingDeliveryId ? "Update Agent" : "Create Agent")}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Delivery Assignment Modal */}
-      {showAssignModal && selectedOrderForAssignment && (
-        <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: "rgba(0, 0, 0, 0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 1000,
-          padding: "20px"
-        }}>
-          <div style={{
-            backgroundColor: "#fff",
-            borderRadius: "12px",
-            padding: "24px",
-            maxWidth: "500px",
-            width: "100%",
-            position: "relative"
-          }}>
-            {/* Close Button */}
-            <button
-              onClick={() => setShowAssignModal(false)}
-              style={{
-                position: "absolute",
-                top: "15px",
-                right: "15px",
-                background: "none",
-                border: "none",
-                fontSize: "24px",
-                cursor: "pointer",
-                color: "#666"
-              }}
-            >
-              ×
-            </button>
-
-            <h2 style={{ marginBottom: "20px", color: "#5c4033" }}>
-              Assign Delivery Agent
-            </h2>
-
+            <h2 style={{ marginBottom: "20px", color: "#5c4033" }}>Seller Application Details</h2>
+            
+            {/* Business Information */}
             <div style={{ marginBottom: "20px" }}>
-              <p><strong>Order:</strong> #{selectedOrderForAssignment.orderNumber || selectedOrderForAssignment.id}</p>
-              <p><strong>Customer:</strong> {selectedOrderForAssignment.customer}</p>
-              <p><strong>Total:</strong> ₹{selectedOrderForAssignment.total}</p>
-            </div>
-
-            <div style={{ marginBottom: "20px" }}>
-              <h3 style={{ marginBottom: "15px", color: "#5c4033" }}>Select Delivery Agent:</h3>
-              
-              {availableAgents.length === 0 ? (
-                <p style={{ color: "#666", fontStyle: "italic" }}>
-                  No active delivery agents available. Please activate some agents first.
-                </p>
-              ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                  {availableAgents.map((agent) => {
-                    const canAssign = agent.readyForDelivery && agent.isAvailable;
-                    return (
-                    <div key={agent.agentId} style={{
-                      padding: "15px",
-                      border: canAssign ? "2px solid #28a745" : "1px solid #ddd",
-                      borderRadius: "8px",
-                      cursor: canAssign ? "pointer" : "not-allowed",
-                      transition: "all 0.2s",
-                      opacity: canAssign ? 1 : 0.5,
-                      background: canAssign ? "#f8fff8" : "#f8f8f8",
-                      position: "relative"
-                    }}
-                    onMouseOver={(e) => {
-                      if (canAssign) e.currentTarget.style.borderColor = "#5c4033";
-                    }}
-                    onMouseOut={(e) => {
-                      if (canAssign) e.currentTarget.style.borderColor = "#28a745";
-                    }}
-                    onClick={() => canAssign && handleAssignDelivery(selectedOrderForAssignment.id, agent.agentId)}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div style={{ flex: 1 }}>
-                          <h4 style={{ margin: "0 0 5px 0" }}>{agent.name}</h4>
-                          <p style={{ margin: "0", fontSize: "14px", color: "#666" }}>
-                            {agent.agentId} • {agent.phone}
-                          </p>
-                          <p style={{ margin: "0", fontSize: "12px", color: "#999" }}>
-                            {agent.vehicleInfo?.type} {agent.vehicleInfo?.number}
-                          </p>
-                          <div style={{ marginTop: "5px", display: "flex", gap: "10px", alignItems: "center" }}>
-                            <span style={{ fontSize: "12px", color: "#666" }}>
-                              ⭐ {agent.rating?.toFixed(1) || "0.0"}
-                            </span>
-                            <span style={{ fontSize: "12px", color: "#666" }}>
-                              📦 {agent.activeOrdersCount} active orders
-                            </span>
-                            {agent.pendingAcceptanceCount > 0 && (
-                              <span style={{ fontSize: "12px", color: "#ffc107" }}>
-                                ⏳ {agent.pendingAcceptanceCount} pending
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "5px", alignItems: "flex-end" }}>
-                            {agent.readyForDelivery ? (
-                              <span style={{
-                                padding: "4px 10px",
-                                borderRadius: "12px",
-                                fontSize: "11px",
-                                background: "#28a745",
-                                color: "white",
-                                fontWeight: "bold"
-                              }}>
-                                ✅ READY FOR DELIVERY
-                              </span>
-                            ) : (
-                              <span style={{
-                                padding: "4px 10px",
-                                borderRadius: "12px",
-                                fontSize: "11px",
-                                background: "#ffc107",
-                                color: "#212529",
-                                fontWeight: "bold"
-                              }}>
-                                ⏸ NOT READY
-                              </span>
-                            )}
-                            <span style={{
-                              padding: "2px 8px",
-                              borderRadius: "10px",
-                              fontSize: "10px",
-                              background: agent.availability === 'available' ? "#17a2b8" : 
-                                         agent.availability === 'busy' ? "#ffc107" : "#6c757d",
-                              color: "white",
-                              fontWeight: "bold"
-                            }}>
-                              {agent.availability === 'available' ? 'AVAILABLE' :
-                               agent.availability === 'busy' ? 'BUSY' : 'OFFLINE'}
-                            </span>
-                            {agent.isOnline && (
-                              <span style={{
-                                padding: "1px 6px",
-                                borderRadius: "8px",
-                                fontSize: "9px",
-                                background: "#28a745",
-                                color: "white"
-                              }}>
-                                🟢 ONLINE
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      {!agent.readyForDelivery && (
-                        <div style={{
-                          position: "absolute",
-                          top: "50%",
-                          left: "50%",
-                          transform: "translate(-50%, -50%)",
-                          background: "rgba(0, 0, 0, 0.85)",
-                          color: "white",
-                          padding: "10px 20px",
-                          borderRadius: "8px",
-                          fontSize: "14px",
-                          fontWeight: "bold",
-                          pointerEvents: "none",
-                          zIndex: 10
-                        }}>
-                          🚫 Agent Not Ready
-                        </div>
-                      )}
+              <h3 style={{ marginBottom: "15px", color: "#5c4033" }}>Business Information</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "15px" }}>
+                <div>
+                  <p><strong>Business Name:</strong> {selectedApplication.businessName}</p>
+                  <p><strong>Business Type:</strong> {selectedApplication.businessType}</p>
+                  <p><strong>Registration Number:</strong> {selectedApplication.businessRegistrationNumber || 'N/A'}</p>
+                  <p><strong>GSTIN:</strong> {selectedApplication.gstin || 'N/A'}</p>
+                </div>
+                <div>
+                  <p><strong>Phone:</strong> {selectedApplication.phone}</p>
+                  <p><strong>Submitted:</strong> {new Date(selectedApplication.submittedAt).toLocaleString()}</p>
+                  <p><strong>Status:</strong> 
+                    <span style={{
+                      padding: "4px 8px",
+                      borderRadius: "4px",
+                      backgroundColor: selectedApplication.status === 'submitted' ? "#fff3cd" : 
+                                      selectedApplication.status === 'approved' ? "#d4edda" : 
+                                      "#f8d7da",
+                      color: selectedApplication.status === 'submitted' ? "#856404" : 
+                             selectedApplication.status === 'approved' ? "#155724" : 
+                             "#721c24",
+                      fontWeight: "600"
+                    }}>
+                      {selectedApplication.displayStatus}
+                    </span>
+                  </p>
+                  {selectedApplication.rejectionReason && (
+                    <div style={{ marginTop: "10px", padding: "10px", backgroundColor: "#f8d7da", borderRadius: "4px" }}>
+                      <strong>Rejection Reason:</strong> {selectedApplication.rejectionReason}
                     </div>
-                    );
-                  })}
+                  )}
                 </div>
-              )}
+              </div>
             </div>
-
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+            
+            {/* Address Information */}
+            <div style={{ marginBottom: "20px" }}>
+              <h3 style={{ marginBottom: "15px", color: "#5c4033" }}>Business Address</h3>
+              <div style={{ padding: "15px", backgroundColor: "#f8f9fa", borderRadius: "8px" }}>
+                <p><strong>Street:</strong> {selectedApplication.address?.street}</p>
+                <p><strong>City:</strong> {selectedApplication.address?.city}</p>
+                <p><strong>State:</strong> {selectedApplication.address?.state}</p>
+                <p><strong>Pincode:</strong> {selectedApplication.address?.pincode}</p>
+                <p><strong>Country:</strong> {selectedApplication.address?.country}</p>
+              </div>
+            </div>
+            
+            {/* Document Previews */}
+            <div style={{ marginBottom: "20px" }}>
+              <h3 style={{ marginBottom: "15px", color: "#5c4033" }}>Uploaded Documents</h3>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: "15px" }}>
+                <div style={{ textAlign: "center" }}>
+                  <h4>ID Proof</h4>
+                  {selectedApplication.documents && selectedApplication.documents.find(doc => doc.type === 'id_proof') ? (
+                    <div>
+                      <p style={{ fontSize: "14px", color: "#666" }}>{selectedApplication.documents.find(doc => doc.type === 'id_proof').fileName}</p>
+                      <a 
+                        href={`http://localhost:5000${selectedApplication.documents.find(doc => doc.type === 'id_proof').filePath}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ ...buttonPrimary, padding: "8px 16px", fontSize: "14px", textDecoration: "none", display: "inline-block" }}
+                      >
+                        View Document
+                      </a>
+                    </div>
+                  ) : (
+                    <p>No document uploaded</p>
+                  )}
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <h4>Business License</h4>
+                  {selectedApplication.documents && selectedApplication.documents.find(doc => doc.type === 'business_license') ? (
+                    <div>
+                      <p style={{ fontSize: "14px", color: "#666" }}>{selectedApplication.documents.find(doc => doc.type === 'business_license').fileName}</p>
+                      <a 
+                        href={`http://localhost:5000${selectedApplication.documents.find(doc => doc.type === 'business_license').filePath}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ ...buttonPrimary, padding: "8px 16px", fontSize: "14px", textDecoration: "none", display: "inline-block" }}
+                      >
+                        View Document
+                      </a>
+                    </div>
+                  ) : (
+                    <p>No document uploaded</p>
+                  )}
+                </div>
+                <div style={{ textAlign: "center" }}>
+                  <h4>Bank Proof</h4>
+                  {selectedApplication.documents && selectedApplication.documents.find(doc => doc.type === 'bank_proof') ? (
+                    <div>
+                      <p style={{ fontSize: "14px", color: "#666" }}>{selectedApplication.documents.find(doc => doc.type === 'bank_proof').fileName}</p>
+                      <a 
+                        href={`http://localhost:5000${selectedApplication.documents.find(doc => doc.type === 'bank_proof').filePath}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ ...buttonPrimary, padding: "8px 16px", fontSize: "14px", textDecoration: "none", display: "inline-block" }}
+                      >
+                        View Document
+                      </a>
+                    </div>
+                  ) : (
+                    <p>No document uploaded</p>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Action Buttons */}
+            <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
               <button
-                onClick={() => setShowAssignModal(false)}
-                style={{
-                  background: "#ccc",
-                  color: "#333",
-                  border: "none",
-                  padding: "10px 20px",
-                  borderRadius: "6px",
-                  cursor: "pointer"
-                }}
+                onClick={closeApplicationModal}
+                style={{ ...buttonSecondary }}
               >
-                Cancel
+                Close
               </button>
+              {selectedApplication.status === 'submitted' && (
+                <>
+                  <button
+                    onClick={() => {
+                      closeApplicationModal();
+                      approveApplication(selectedApplication._id);
+                    }}
+                    style={{ ...buttonPrimary, background: "#28a745" }}
+                  >
+                    Approve Application
+                  </button>
+                  <button
+                    onClick={() => {
+                      const reason = prompt("Enter rejection reason:");
+                      if (reason !== null) {
+                        closeApplicationModal();
+                        rejectApplication(selectedApplication._id, reason);
+                      }
+                    }}
+                    style={{ ...buttonPrimary, background: "#dc3545" }}
+                  >
+                    Reject Application
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -2415,6 +4179,7 @@ export default function AdminDashboard() {
     </div>
   );
 }
+
 /* 🎨 Styles */
 const statCard = {
   background: "#fff",
@@ -2431,6 +4196,7 @@ const inputStyle = {
   border: "1px solid #ddd",
   outline: "none",
   fontSize: "14px",
+  width: "100%"
 };
 
 const buttonPrimary = {
@@ -2458,15 +4224,18 @@ const linkStyle = {
   backgroundColor: "transparent",
   border: "none",
   textAlign: "left",
-  padding: "8px",
+  padding: "12px 16px",
   cursor: "pointer",
   color: "#444",
-  fontSize: "14px",
+  fontSize: "15px",
+  borderRadius: "6px",
+  transition: "all 0.2s ease",
+  display: "flex",
+  alignItems: "center"
 };
 
 const activeLinkStyle = {
   backgroundColor: "#f0f0f0",
-  borderRadius: "6px",
   fontWeight: "bold",
   color: "#5c4033",
 };
@@ -2476,4 +4245,3 @@ const controlItem = {
   borderBottom: "1px solid #eee",
   cursor: "pointer",
 };
-

@@ -188,7 +188,7 @@ class RecommendationEngine:
             return pd.DataFrame()
     
     def content_based_recommendations(self, product_id, n=5):
-        """Get recommendations based on product content similarity"""
+        """Get recommendations based on product content similarity (same category only)"""
         try:
             if self.products_df is None or len(self.products_df) == 0:
                 return []
@@ -202,32 +202,56 @@ class RecommendationEngine:
             
             idx = idx[0]
             
-            # Get similarity scores
-            sim_scores = list(enumerate(self.cosine_sim[idx]))
+            # Get the target product's category
+            target_category = self.products_df.iloc[idx]['category']
+            logger.info(f"🔍 Finding recommendations for category: {target_category}")
             
-            # Sort by similarity (excluding itself)
-            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[1:n+6]
+            # Filter products to only include same category (excluding the product itself)
+            same_category_mask = (
+                (self.products_df['category'] == target_category) & 
+                (self.products_df['id'] != product_id)
+            )
+            same_category_products = self.products_df[same_category_mask]
+            
+            if same_category_products.empty:
+                logger.warning(f"No other products found in category: {target_category}")
+                return []
+            
+            # Get similarity scores only for same-category products
+            same_category_indices = same_category_products.index.tolist()
+            sim_scores = [(i, self.cosine_sim[idx][i]) for i in same_category_indices]
+            
+            # Sort by similarity
+            sim_scores = sorted(sim_scores, key=lambda x: x[1], reverse=True)[:n]
             
             # Get product indices
             product_indices = [i[0] for i in sim_scores]
             
             # Get products
             recommendations = self.products_df.iloc[product_indices].copy()
-            recommendations['similarity_score'] = [score[1] for score in sim_scores[:len(recommendations)]]
+            recommendations['similarity_score'] = [score[1] for score in sim_scores]
             
-            return recommendations.head(n).to_dict('records')
+            logger.info(f"✅ Found {len(recommendations)} same-category recommendations")
+            return recommendations.to_dict('records')
             
         except Exception as e:
             logger.error(f"❌ Content-based filtering error: {e}")
             return []
     
     def collaborative_recommendations(self, product_id, n=5):
-        """Get recommendations based on what other users bought together"""
+        """Get recommendations based on what other users bought together (same category only)"""
         try:
             purchase_df = self.get_user_purchase_history()
             
             if purchase_df.empty:
                 return []
+            
+            # Get target product's category
+            target_product = self.products_df[self.products_df['id'] == product_id]
+            if target_product.empty:
+                return []
+            
+            target_category = target_product.iloc[0]['category']
             
             # Find users who bought this product
             users_bought_this = purchase_df[
@@ -254,17 +278,24 @@ class RecommendationEngine:
                 product_counts['rating'] * 0.3
             )
             
-            product_counts = product_counts.sort_values('score', ascending=False).head(n)
+            product_counts = product_counts.sort_values('score', ascending=False)
             
-            # Get product details
+            # Get product details - FILTER BY SAME CATEGORY ONLY
             recommendations = []
             for _, row in product_counts.iterrows():
                 prod = self.products_df[self.products_df['id'] == row['productId']]
                 if not prod.empty:
-                    prod_dict = prod.iloc[0].to_dict()
-                    prod_dict['collaborative_score'] = row['score']
-                    recommendations.append(prod_dict)
+                    # Only include if same category
+                    if prod.iloc[0]['category'] == target_category:
+                        prod_dict = prod.iloc[0].to_dict()
+                        prod_dict['collaborative_score'] = row['score']
+                        recommendations.append(prod_dict)
+                        
+                        # Stop when we have enough recommendations
+                        if len(recommendations) >= n:
+                            break
             
+            logger.info(f"✅ Found {len(recommendations)} same-category collaborative recommendations")
             return recommendations
             
         except Exception as e:
@@ -272,18 +303,21 @@ class RecommendationEngine:
             return []
     
     def hybrid_recommendations(self, product_id, n=5):
-        """Combine content-based and collaborative filtering"""
+        """Combine content-based and collaborative filtering (same category only)"""
         try:
-            # Get both types of recommendations
+            # Get both types of recommendations (already filtered by category)
             content_recs = self.content_based_recommendations(product_id, n=n*2)
             collab_recs = self.collaborative_recommendations(product_id, n=n*2)
             
             # If one method fails, use the other
             if not content_recs and not collab_recs:
+                logger.warning("Both recommendation methods returned empty, using fallback")
                 return self.fallback_recommendations(product_id, n)
             elif not collab_recs:
+                logger.info("Using content-based recommendations only")
                 return content_recs[:n]
             elif not content_recs:
+                logger.info("Using collaborative recommendations only")
                 return collab_recs[:n]
             
             # Combine scores
@@ -326,6 +360,7 @@ class RecommendationEngine:
                 reverse=True
             )
             
+            logger.info(f"✅ Hybrid recommendations: {len(sorted_products[:n])} products (same category)")
             return sorted_products[:n]
             
         except Exception as e:
@@ -333,7 +368,7 @@ class RecommendationEngine:
             return self.fallback_recommendations(product_id, n)
     
     def fallback_recommendations(self, product_id, n=5):
-        """Fallback: recommend products from same category and similar price"""
+        """Fallback: recommend products from same category ONLY"""
         try:
             if self.products_df is None or len(self.products_df) == 0:
                 return []
@@ -341,22 +376,21 @@ class RecommendationEngine:
             # Get target product
             target = self.products_df[self.products_df['id'] == product_id]
             if target.empty:
-                # Return top-rated products
-                return self.products_df.nlargest(n, 'rating').to_dict('records')
+                logger.warning(f"Product {product_id} not found for fallback")
+                return []
             
             target = target.iloc[0]
+            target_category = target['category']
             
-            # Filter by same category
+            # Filter by same category ONLY
             same_category = self.products_df[
-                (self.products_df['category'] == target['category']) &
+                (self.products_df['category'] == target_category) &
                 (self.products_df['id'] != product_id)
             ].copy()
             
             if same_category.empty:
-                # Return top-rated products
-                return self.products_df[
-                    self.products_df['id'] != product_id
-                ].nlargest(n, 'rating').to_dict('records')
+                logger.warning(f"No other products in category '{target_category}' for recommendations")
+                return []
             
             # Calculate price similarity
             same_category['price_diff'] = abs(same_category['price'] - target['price'])
@@ -365,14 +399,16 @@ class RecommendationEngine:
             # Calculate rating similarity
             same_category['rating_sim'] = 1 - abs(same_category['rating'] - target['rating']) / 5
             
-            # Combined score
+            # Combined score (prioritize rating and price similarity)
             same_category['score'] = (
                 same_category['price_sim'] * 0.3 +
                 same_category['rating_sim'] * 0.3 +
                 same_category['rating'] * 0.4
             )
             
-            return same_category.nlargest(n, 'score').to_dict('records')
+            recommendations = same_category.nlargest(n, 'score').to_dict('records')
+            logger.info(f"✅ Fallback: {len(recommendations)} same-category recommendations for '{target_category}'")
+            return recommendations
             
         except Exception as e:
             logger.error(f"❌ Fallback recommendation error: {e}")
@@ -484,5 +520,6 @@ if __name__ == '__main__':
     port = int(os.getenv('ML_SERVICE_PORT', 5001))
     logger.info(f"🚀 Starting ML Recommendation Service on port {port}")
     app.run(host='0.0.0.0', port=port, debug=False)
+
 
 

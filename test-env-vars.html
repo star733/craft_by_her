@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Environment Variables</title>
+</head>
+<body>
+    <h1>Environment Variables Test</h1>
+    <div id="results"></div>
+    
+    <script type="module">
+        const results = document.getElementById('results');
+        
+        function log(message) {
+            console.log(message);
+            results.innerHTML += '<p>' + message + '</p>';
+        }
+        
+        // Test environment variables
+        log('🧪 Testing environment variables...');
+        log(`VITE_API_BASE_URL: ${import.meta.env.VITE_API_BASE_URL}`);
+        log(`MODE: ${import.meta.env.MODE}`);
+        log(`DEV: ${import.meta.env.DEV}`);
+        
+        // Test if we can construct the API URLs
+        const apiBase = import.meta.env.VITE_API_BASE_URL;
+        log(`\n🔗 API URLs that would be used:`);
+        log(`Stats: ${apiBase}/api/hub-managers/dashboard/stats`);
+        log(`Hubs: ${apiBase}/api/hubs/all-with-stats`);
+        log(`Notifications: ${apiBase}/api/hub-notifications?managerId=HM0001`);
+        log(`Orders: ${apiBase}/api/hub-managers/orders/hub`);
+        
+        // Test basic connectivity
+        log(`\n🧪 Testing basic connectivity...`);
+        
+        try {
+            const response = await fetch(`${apiBase}/`);
+            log(`Server response status: ${response.status}`);
+            const text = await response.text();
+            log(`Server response: ${text}`);
+            
+            if (response.ok) {
+                log('✅ Frontend can reach backend');
+            } else {
+                log('❌ Frontend cannot reach backend');
+            }
+        } catch (error) {
+            log(`❌ Connection error: ${error.message}`);
+        }
+    </script>
+</body>
+</html>

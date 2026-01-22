@@ -192,10 +192,6 @@ deliveryAgentSchema.virtual('contactInfo').get(function() {
 });
 
 // Index for better performance
-deliveryAgentSchema.index({ agentId: 1 });
-deliveryAgentSchema.index({ username: 1 });
-deliveryAgentSchema.index({ email: 1 });
-deliveryAgentSchema.index({ phone: 1 });
 deliveryAgentSchema.index({ status: 1 });
 deliveryAgentSchema.index({ isOnline: 1 });
 deliveryAgentSchema.index({ 'currentLocation.latitude': 1, 'currentLocation.longitude': 1 });

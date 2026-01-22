@@ -1,7 +1,7 @@
 // src/pages/Products.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { CATEGORIES } from "../data/products"; // keep categories only
+import { MAIN_CATEGORIES, ALL_SUBCATEGORIES } from "../data/categories";
 
 const slugify = (s) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -12,7 +12,8 @@ export default function Products() {
   const [params] = useSearchParams();
 
   const [products, setProducts] = useState([]);
-  const [active, setActive] = useState("All");
+  const [activeMainCategory, setActiveMainCategory] = useState(null);
+  const [activeSubCategory, setActiveSubCategory] = useState(null);
   const [q, setQ] = useState("");
   const gridRef = useRef(null);
 
@@ -22,8 +23,6 @@ export default function Products() {
       .then((res) => res.json())
       .then((data) => {
         console.log("Products API response:", data);
-  
-        // support both shapes
         const items = Array.isArray(data) ? data : data.products || [];
         setProducts(items);
       })
@@ -32,17 +31,41 @@ export default function Products() {
   
   // ✅ Sync category with URL
   useEffect(() => {
-    const slug = params.get("cat");
-    if (!slug) return;
+    const mainCat = params.get("main");
+    const subCat = params.get("sub");
+    const cat = params.get("cat"); // Legacy support
 
-    if (slug === "bestsellers") {
-      if (active !== "Bestsellers") setActive("Bestsellers");
+    if (cat === "bestsellers") {
+      setActiveMainCategory(null);
+      setActiveSubCategory("Bestsellers");
       return;
     }
 
-    const match = CATEGORIES.find((c) => slugify(c) === slug);
-    if (match && match !== active) setActive(match);
-  }, [params, active]);
+    if (mainCat) {
+      const main = Object.keys(MAIN_CATEGORIES).find(
+        (k) => slugify(k) === mainCat
+      );
+      if (main) setActiveMainCategory(main);
+    }
+
+    if (subCat) {
+      const sub = ALL_SUBCATEGORIES.find((s) => slugify(s) === subCat);
+      if (sub) setActiveSubCategory(sub);
+    } else if (cat) {
+      // Legacy category support
+      const legacy = ALL_SUBCATEGORIES.find((c) => slugify(c) === cat);
+      if (legacy) {
+        // Find which main category this subcategory belongs to
+        const main = Object.keys(MAIN_CATEGORIES).find((mainKey) =>
+          MAIN_CATEGORIES[mainKey].subcategories.includes(legacy)
+        );
+        if (main) {
+          setActiveMainCategory(main);
+          setActiveSubCategory(legacy);
+        }
+      }
+    }
+  }, [params]);
 
   // ✅ Scroll if #grid
   useEffect(() => {
@@ -51,25 +74,79 @@ export default function Products() {
         gridRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 50);
     }
-  }, [location.hash, active, q]);
+  }, [location.hash, activeMainCategory, activeSubCategory, q]);
 
   // ✅ Filter products
   const filtered = useMemo(() => {
-    let base;
+    // Exclude test products first
+    let base = products.filter(p => {
+      if (p.title && p.title.toLowerCase().includes("test product")) return false;
+      return true;
+    });
 
-    if (active === "Bestsellers") {
-      base = products.filter((p) =>
-        (p.tag || "").toLowerCase().includes("bestseller")
-      );
-    } else {
-      base =
-        active === "All"
-          ? products
-          : products.filter(
-              (p) =>
-                p.category === active ||
-                p.category?.name === active // handle populated category
-            );
+    if (activeSubCategory === "Bestsellers") {
+      // Show bestsellers: 3 craft products and 2 food products
+      const craftProducts = products.filter((p) => {
+        // Check new structure first
+        if (p.mainCategory === "Crafts") return true;
+        // Check legacy structure - if category contains "craft" (case-insensitive)
+        if (p.category && typeof p.category === 'string' && p.category.toLowerCase().includes('craft')) return true;
+        return false;
+      });
+      
+      const foodProducts = products.filter((p) => {
+        // Check new structure first
+        if (p.mainCategory === "Food") return true;
+        // Check legacy structure - if mainCategory is not Crafts and category doesn't contain "craft"
+        if (p.mainCategory && p.mainCategory !== "Crafts") return true;
+        // If no mainCategory, check if category exists and doesn't contain "craft"
+        if (p.category && typeof p.category === 'string' && !p.category.toLowerCase().includes('craft')) return true;
+        // If category is an object (legacy), assume it's food
+        if (p.category && typeof p.category === 'object') return true;
+        return false;
+      });
+
+      // Get 3 craft products (prioritize by creation date or tag)
+      const selectedCrafts = [...craftProducts]
+        .sort((a, b) => {
+          const aIsTagged = (a.tag || "").toLowerCase().includes("bestseller") || a.isBestseller === true;
+          const bIsTagged = (b.tag || "").toLowerCase().includes("bestseller") || b.isBestseller === true;
+          if (aIsTagged && !bIsTagged) return -1;
+          if (!aIsTagged && bIsTagged) return 1;
+          return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        })
+        .slice(0, 3);
+
+      // Get 2 food products (prioritize by creation date or tag)
+      const selectedFood = [...foodProducts]
+        .sort((a, b) => {
+          const aIsTagged = (a.tag || "").toLowerCase().includes("bestseller") || a.isBestseller === true;
+          const bIsTagged = (b.tag || "").toLowerCase().includes("bestseller") || b.isBestseller === true;
+          if (aIsTagged && !bIsTagged) return -1;
+          if (!aIsTagged && bIsTagged) return 1;
+          return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+        })
+        .slice(0, 2);
+
+      // Combine: 3 crafts + 2 food
+      base = [...selectedCrafts, ...selectedFood];
+    } else if (activeSubCategory) {
+      base = products.filter((p) => {
+        // Check new structure first
+        if (p.subCategory === activeSubCategory) return true;
+        // Check legacy structure
+        if (p.category === activeSubCategory || p.category?.name === activeSubCategory) return true;
+        return false;
+      });
+    } else if (activeMainCategory) {
+      base = products.filter((p) => {
+        // Check new structure first
+        if (p.mainCategory === activeMainCategory) return true;
+        // Check legacy - find if category belongs to this main category
+        const subcats = MAIN_CATEGORIES[activeMainCategory].subcategories;
+        const catName = p.category?.name || p.category;
+        return subcats.includes(catName);
+      });
     }
 
     const rq = q.trim().toLowerCase();
@@ -79,11 +156,29 @@ export default function Products() {
         p.title.toLowerCase().includes(rq) ||
         (p.tag || "").toLowerCase().includes(rq)
     );
-  }, [products, active, q]);
+  }, [products, activeMainCategory, activeSubCategory, q]);
 
-  const onPickCategory = (c) => {
-    setActive(c);
-    navigate(`/products?cat=${slugify(c)}#grid`);
+  const onPickMainCategory = (mainCat) => {
+    setActiveMainCategory(mainCat);
+    setActiveSubCategory(null);
+    navigate(`/products?main=${slugify(mainCat)}#grid`);
+  };
+
+  const onPickSubCategory = (subCat) => {
+    setActiveSubCategory(subCat);
+    const main = Object.keys(MAIN_CATEGORIES).find((mainKey) =>
+      MAIN_CATEGORIES[mainKey].subcategories.includes(subCat)
+    );
+    if (main) {
+      setActiveMainCategory(main);
+      navigate(`/products?main=${slugify(main)}&sub=${slugify(subCat)}#grid`);
+    }
+  };
+
+  const onClearFilters = () => {
+    setActiveMainCategory(null);
+    setActiveSubCategory(null);
+    navigate(`/products#grid`);
   };
 
   return (
@@ -109,7 +204,7 @@ export default function Products() {
                 Our Products
               </h1>
               <p style={{ color: "var(--text-muted)", margin: 0 }}>
-                Honest Snacks, Cakes, Pickles & Spice Powders
+                Honest Food & Handcrafted Items
               </p>
             </div>
 
@@ -117,7 +212,7 @@ export default function Products() {
             <div>
               <input
                 type="search"
-                placeholder="Search snacks, cakes, pickles, powders…"
+                placeholder="Search products…"
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 style={{
@@ -133,45 +228,100 @@ export default function Products() {
         </div>
       </section>
 
-      {/* Category strip */}
-      <section className="cbh-cat-wrap" aria-label="Filters">
+      {/* Main Category strip */}
+      <section className="cbh-cat-wrap" aria-label="Main Categories">
         <div className="cbh-container">
           <div className="cbh-cat-strip">
-            {CATEGORIES.map((c) => (
+            <button
+              className={`cbh-cat-pill ${!activeMainCategory && !activeSubCategory ? "active" : ""}`}
+              onClick={onClearFilters}
+              aria-pressed={!activeMainCategory && !activeSubCategory}
+            >
+              <span
+                className="cbh-cat-img all"
+                style={{
+                  backgroundImage: "url(/images/products/all.jpg)",
+                }}
+              />
+              <span className="cbh-cat-text">
+                <span className="cbh-cat-label">All</span>
+                <span className="cbh-cat-cap">Explore</span>
+              </span>
+            </button>
+            {Object.keys(MAIN_CATEGORIES).map((mainCat) => (
               <button
-                key={c}
-                className={`cbh-cat-pill ${active === c ? "active" : ""}`}
-                onClick={() => onPickCategory(c)}
-                aria-pressed={active === c}
+                key={mainCat}
+                className={`cbh-cat-pill ${activeMainCategory === mainCat ? "active" : ""}`}
+                onClick={() => onPickMainCategory(mainCat)}
+                aria-pressed={activeMainCategory === mainCat}
               >
                 <span
-                  className="cbh-cat-img all"
+                  className="cbh-cat-img"
                   style={{
                     backgroundImage:
-                      c === "All"
-                        ? "url(/images/products/all.jpg)"
-                        : c === "Snacks"
+                      mainCat === "Food"
                         ? "url(/images/home/cat-snacks.jpg)"
-                        : c === "Cakes"
-                        ? "url(/images/home/cat-cakes.jpg)"
-                        : c === "Pickles"
-                        ? "url(/images/home/cat-pickles.jpg)"
-                        : c === "Powders"
-                        ? "url(/images/home/cat-powders.jpg)"
-                        : c === "Spices"
-                        ? "url(/images/home/cat-spices.jpg)"
+                        : mainCat === "Crafts"
+                        ? "url(/images/home/cat-crafts.jpg)"
                         : "linear-gradient(135deg, #f1e8f4, #efe3f2)",
                   }}
                 />
                 <span className="cbh-cat-text">
-                  <span className="cbh-cat-label">{c}</span>
+                  <span className="cbh-cat-label">{mainCat}</span>
                   <span className="cbh-cat-cap">Explore</span>
                 </span>
               </button>
             ))}
+            <button
+              className={`cbh-cat-pill ${activeSubCategory === "Bestsellers" ? "active" : ""}`}
+              onClick={() => {
+                setActiveSubCategory("Bestsellers");
+                setActiveMainCategory(null);
+                navigate(`/products?cat=bestsellers#grid`);
+              }}
+              aria-pressed={activeSubCategory === "Bestsellers"}
+            >
+              <span
+                className="cbh-cat-img"
+                style={{
+                  backgroundImage: "url(/images/home/cat-bestsellers.jpg)",
+                }}
+              />
+              <span className="cbh-cat-text">
+                <span className="cbh-cat-label">Bestsellers</span>
+                <span className="cbh-cat-cap">Explore</span>
+              </span>
+            </button>
           </div>
         </div>
       </section>
+
+      {/* Sub Category strip (shown when main category is selected) */}
+      {activeMainCategory && (
+        <section
+          className="cbh-cat-wrap"
+          aria-label="Sub Categories"
+          style={{ background: "#f9f9f9", borderTop: "1px solid var(--border)" }}
+        >
+          <div className="cbh-container">
+            <div className="cbh-cat-strip">
+              {MAIN_CATEGORIES[activeMainCategory].subcategories.map((subCat) => (
+                <button
+                  key={subCat}
+                  className={`cbh-cat-pill ${activeSubCategory === subCat ? "active" : ""}`}
+                  onClick={() => onPickSubCategory(subCat)}
+                  aria-pressed={activeSubCategory === subCat}
+                  style={{ fontSize: "14px" }}
+                >
+                  <span className="cbh-cat-text">
+                    <span className="cbh-cat-label">{subCat}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Grid */}
       <section id="grid" style={{ padding: "8px 0 26px", background: "#fff" }}>
@@ -254,10 +404,10 @@ export default function Products() {
                     textTransform: "uppercase",
                     letterSpacing: "0.5px"
                   }}>
-                    {p.category?.name || p.category || "Uncategorized"}
+                    {p.mainCategory && p.subCategory 
+                      ? `${p.mainCategory} > ${p.subCategory}`
+                      : p.subCategory || p.category?.name || p.category || "Uncategorized"}
                   </p>
-
-                  {/* Hide detailed price/variants on list cards per request */}
 
                   {/* Add to Cart Button */}
                   <button
@@ -281,7 +431,10 @@ export default function Products() {
                     onMouseLeave={(e) => {
                       e.currentTarget.style.background = "#5c4033";
                     }}
-                    onClick={() => navigate(`/products/${p._id}`)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/products/${p._id}`);
+                    }}
                   >
                     View
                   </button>

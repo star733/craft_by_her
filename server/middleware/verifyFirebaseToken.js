@@ -2,8 +2,10 @@ const admin = require("../firebaseAdmin");
 
 module.exports = async function verifyFirebaseToken(req, res, next) {
   try {
+    console.log(`🔒 verifyFirebaseToken called for: ${req.method} ${req.url}`);
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      console.log(`❌ No token in request to ${req.url}`);
       return res.status(401).json({ ok: false, message: "No token provided" });
     }
 

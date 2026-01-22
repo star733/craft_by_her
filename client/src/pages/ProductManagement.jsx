@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { auth } from "../firebase";
 import { toast } from "react-toastify";
+import { MAIN_CATEGORIES } from "../data/categories";
 
 export default function ProductManagement() {
   const [products, setProducts] = useState([]);
-  const [categories, setCategories] = useState([]);
   const [form, setForm] = useState({
     title: "",
-    category: "",
+    mainCategory: "",
+    subCategory: "",
+    stock: "",
     variants: [{ weight: "", price: "" }],
     image: null,
   });
@@ -24,31 +26,30 @@ export default function ProductManagement() {
     setProducts(Array.isArray(data) ? data : []);
   };
 
-  // ✅ Fetch categories
-  const fetchCategories = async (user) => {
-    const token = await user.getIdToken();
-    const res = await fetch("http://localhost:5000/api/admin/categories", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const data = await res.json();
-    setCategories(Array.isArray(data) ? data : []);
-  };
-
   useEffect(() => {
     const unsub = auth.onAuthStateChanged((user) => {
       if (user) {
         fetchProducts(user);
-        fetchCategories(user);
       }
     });
     return () => unsub();
   }, []);
 
+  // Get available subcategories for selected main category
+  const getAvailableSubcategories = () => {
+    if (!form.mainCategory) return [];
+    return MAIN_CATEGORIES[form.mainCategory]?.subcategories || [];
+  };
+
   // ✅ Save product
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.title || !form.category) {
-      toast.error("Title and category are required");
+    if (!form.title || !form.mainCategory || !form.subCategory) {
+      toast.error("Title, main category, and subcategory are required");
+      return;
+    }
+    if (!form.stock || form.stock < 0) {
+      toast.error("Valid stock quantity is required");
       return;
     }
     if (!form.variants.some((v) => v.weight && v.price > 0)) {
@@ -66,7 +67,9 @@ export default function ProductManagement() {
 
       const fd = new FormData();
       fd.append("title", form.title);
-      fd.append("category", form.category);
+      fd.append("mainCategory", form.mainCategory);
+      fd.append("subCategory", form.subCategory);
+      fd.append("stock", form.stock);
       fd.append("variants", JSON.stringify(form.variants));
       if (form.image) fd.append("image", form.image);
 
@@ -78,11 +81,19 @@ export default function ProductManagement() {
 
       if (res.ok) {
         toast.success(editingId ? "Product updated" : "Product added");
-        setForm({ title: "", category: "", variants: [{ weight: "", price: "" }], image: null });
+        setForm({ 
+          title: "", 
+          mainCategory: "", 
+          subCategory: "",
+          stock: "",
+          variants: [{ weight: "", price: "" }], 
+          image: null 
+        });
         setEditingId(null);
         fetchProducts(auth.currentUser);
       } else {
-        toast.error("Failed to save product");
+        const errorData = await res.json();
+        toast.error(errorData.error || "Failed to save product");
       }
     } catch (err) {
       console.error(err);
@@ -90,6 +101,21 @@ export default function ProductManagement() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Handle edit
+  const handleEdit = (product) => {
+    setForm({
+      title: product.title || "",
+      mainCategory: product.mainCategory || "",
+      subCategory: product.subCategory || "",
+      stock: product.stock || "",
+      variants: product.variants && product.variants.length > 0 
+        ? product.variants 
+        : [{ weight: "", price: "" }],
+      image: null,
+    });
+    setEditingId(product._id);
   };
 
   return (
@@ -106,19 +132,44 @@ export default function ProductManagement() {
           className="border px-3 py-2 rounded w-full mb-3"
         />
 
-        {/* ✅ Dynamic Category Dropdown */}
+        {/* Main Category Dropdown */}
         <select
-          value={form.category}
-          onChange={(e) => setForm({ ...form, category: e.target.value })}
+          value={form.mainCategory}
+          onChange={(e) => setForm({ ...form, mainCategory: e.target.value, subCategory: "" })}
           className="border px-3 py-2 rounded w-full mb-3"
         >
-          <option value="">Select Category</option>
-          {categories.map((c) => (
-            <option key={c._id} value={c._id}>
-              {c.name}
+          <option value="">Select Main Category</option>
+          {Object.keys(MAIN_CATEGORIES).map((mainCat) => (
+            <option key={mainCat} value={mainCat}>
+              {mainCat}
             </option>
           ))}
         </select>
+
+        {/* Sub Category Dropdown */}
+        <select
+          value={form.subCategory}
+          onChange={(e) => setForm({ ...form, subCategory: e.target.value })}
+          className="border px-3 py-2 rounded w-full mb-3"
+          disabled={!form.mainCategory}
+        >
+          <option value="">Select Sub Category</option>
+          {getAvailableSubcategories().map((subCat) => (
+            <option key={subCat} value={subCat}>
+              {subCat}
+            </option>
+          ))}
+        </select>
+
+        {/* Stock */}
+        <input
+          type="number"
+          placeholder="Stock Quantity"
+          value={form.stock}
+          onChange={(e) => setForm({ ...form, stock: e.target.value })}
+          className="border px-3 py-2 rounded w-full mb-3"
+          min="0"
+        />
 
         {/* Variants */}
         <h4 className="font-semibold mb-2">Variants (Weight + Price)</h4>
@@ -173,27 +224,66 @@ export default function ProductManagement() {
         {/* Image */}
         <input
           type="file"
+          accept="image/*"
           onChange={(e) => setForm({ ...form, image: e.target.files[0] })}
           className="mb-3"
         />
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="bg-green-600 text-white px-4 py-2 rounded"
-        >
-          {loading ? "Saving..." : editingId ? "Update Product" : "Add Product"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-green-600 text-white px-4 py-2 rounded"
+          >
+            {loading ? "Saving..." : editingId ? "Update Product" : "Add Product"}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={() => {
+                setForm({ 
+                  title: "", 
+                  mainCategory: "", 
+                  subCategory: "",
+                  stock: "",
+                  variants: [{ weight: "", price: "" }], 
+                  image: null 
+                });
+                setEditingId(null);
+              }}
+              className="bg-gray-500 text-white px-4 py-2 rounded"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
       {/* Products List */}
       <h3 className="text-xl font-bold mb-2">Products List</h3>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {products.map((p) => (
+        {products
+          .filter(p => {
+            // Exclude test products
+            if (p.title && p.title.toLowerCase().includes("test product")) return false;
+            return true;
+          })
+          .map((p) => (
           <div key={p._id} className="border rounded p-3 bg-white">
-            {p.image && <img src={`http://localhost:5000/uploads/${p.image}`} alt={p.title} className="w-full h-40 object-cover rounded mb-2" />}
+            {p.image && (
+              <img 
+                src={`http://localhost:5000/uploads/${p.image}`} 
+                alt={p.title} 
+                className="w-full h-40 object-cover rounded mb-2" 
+              />
+            )}
             <h4 className="font-bold">{p.title}</h4>
-            <p className="text-sm text-gray-500">Category: {p.category?.name || "Uncategorized"}</p>
+            <p className="text-sm text-gray-500">
+              Category: {p.mainCategory && p.subCategory 
+                ? `${p.mainCategory} > ${p.subCategory}`
+                : p.subCategory || p.category?.name || p.category || "Uncategorized"}
+            </p>
+            <p className="text-sm text-gray-500">Stock: {p.stock || 0}</p>
             <ul className="mt-2">
               {(p.variants || []).map((v, idx) => (
                 <li key={idx}>
@@ -201,6 +291,14 @@ export default function ProductManagement() {
                 </li>
               ))}
             </ul>
+            <div className="mt-2 flex gap-2">
+              <button
+                onClick={() => handleEdit(p)}
+                className="bg-blue-500 text-white px-3 py-1 rounded text-sm"
+              >
+                Edit
+              </button>
+            </div>
           </div>
         ))}
       </div>

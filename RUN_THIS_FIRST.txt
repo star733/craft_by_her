@@ -1,0 +1,73 @@
+🔧 IMPORTANT: FIX NOTIFICATION ISSUE
+=====================================
+
+STEP 1: Run the Diagnostic Script
+----------------------------------
+This script will fix the sellerId issue AND create a test notification with a real order:
+
+Command:
+  node server/test-notification.js
+
+This script will:
+✅ Find the "Red Velvet" product
+✅ Find Micah's user account
+✅ Check if the product's sellerId matches Micah's UID
+✅ Update the product if needed
+✅ Find an existing order with Red Velvet product
+✅ Create a test notification linked to that order
+
+STEP 2: Restart the Server
+---------------------------
+After running the script, restart your server:
+
+1. Stop the current server (Ctrl+C)
+2. Start it again: node server/index.js
+
+STEP 3: Test the Notification System
+-------------------------------------
+1. Login as Micah (the seller)
+2. Go to seller dashboard (http://localhost:5173/seller)
+3. Click the notification bell icon (top-right)
+4. You should see the test notification with order details
+5. Click "View Order & Move to Hub" button
+6. You'll be taken to the order details page showing:
+   - Order information (number, date, status, payment)
+   - Product details (images, variants, quantities, prices)
+   - Buyer information (name, email, phone, address)
+   - "Move to Hub" button
+7. Click "Move to Hub" button
+8. Select your nearest hub from the modal
+9. Click "Confirm" to move products to hub
+
+STEP 4: What Happens Next
+--------------------------
+After moving to hub:
+✅ Order status changes to "at_seller_hub"
+✅ Admin receives notification to approve the order
+✅ Seller sees confirmation message
+✅ Products are tracked in the hub system
+✅ Seller is redirected back to dashboard
+
+TROUBLESHOOTING:
+----------------
+If you see "Order ID not found" error:
+- The notification doesn't have a real order linked
+- Create a new order by:
+  1. Login as a buyer
+  2. Add Red Velvet product to cart
+  3. Complete checkout
+  4. Login back as Micah (seller)
+  5. Check notifications - you should see a real order notification
+
+If order details page shows 500 error:
+- Check server console logs
+- Verify the order exists in database
+- Run the diagnostic script again
+
+=====================================
+After running the script, you should see output like:
+✅ Product sellerId MATCHES Micah's UID
+✅ Found order with Red Velvet: ORD-XXXXX
+✅ Notification linked to order: [order-id]
+✅ All done! Now refresh your seller dashboard to see the notification.
+

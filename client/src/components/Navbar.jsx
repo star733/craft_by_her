@@ -16,6 +16,9 @@ export default function Navbar() {
                                  location.pathname.startsWith('/cart') || 
                                  location.pathname.startsWith('/wishlist');
 
+  // Check if we're on seller dashboard
+  const isSellerDashboard = location.pathname.startsWith('/seller');
+
   // Determine which page we're on for icon display
   const isAccountPage = location.pathname.startsWith('/account');
   const isCartPage = location.pathname.startsWith('/cart');
@@ -59,7 +62,8 @@ export default function Navbar() {
       if (user) {
         try {
           const token = await user.getIdToken();
-          const response = await fetch('http://localhost:5000/api/auth/me', {
+          const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:5000";
+          const response = await fetch(`${API_BASE}/api/auth/me`, {
             headers: { Authorization: `Bearer ${token}` }
           });
           
@@ -106,6 +110,10 @@ export default function Navbar() {
       navigate("/admin");
       return;
     }
+    if (userRole === 'seller') {
+      navigate("/seller");
+      return;
+    }
     navigate(user ? "/cart/authenticated" : "/cart");
   };
 
@@ -114,12 +122,20 @@ export default function Navbar() {
       navigate("/admin");
       return;
     }
+    if (userRole === 'seller') {
+      navigate("/seller");
+      return;
+    }
     navigate(user ? "/wishlist/authenticated" : "/wishlist");
   };
 
   const handleAccountClick = () => {
     if (userRole === 'admin') {
       navigate("/admin");
+      return;
+    }
+    if (userRole === 'seller') {
+      navigate("/seller");
       return;
     }
     navigate(user ? "/account" : "/login");
@@ -147,9 +163,10 @@ export default function Navbar() {
             >
               Menu
             </Link>
+            {user && <Link to="/content" className="bk-link">Talent Platform</Link>}
             <Link to="/about" className="bk-link">About Us</Link>
             <Link to="/contact" className="bk-link">Contact</Link>
-            {user && userRole !== 'admin' && <Link to="/orders" className="bk-link">My Orders</Link>}
+            {user && userRole !== 'admin' && userRole !== 'seller' && <Link to="/orders" className="bk-link">My Orders</Link>}
           </nav>
         )}
 
@@ -159,7 +176,7 @@ export default function Navbar() {
           {isSimplifiedHeaderPage ? (
             <>
               {/* Cart page: Show wishlist and account icons */}
-              {isCartPage && userRole !== 'admin' && (
+              {isCartPage && userRole !== 'admin' && userRole !== 'seller' && (
                 <>
                   <button
                     className="icon-btn"
@@ -182,7 +199,7 @@ export default function Navbar() {
               )}
 
               {/* Wishlist page: Show cart and account icons */}
-              {isWishlistPage && userRole !== 'admin' && (
+              {isWishlistPage && userRole !== 'admin' && userRole !== 'seller' && (
                 <>
                   <button
                     className="icon-btn"
@@ -204,7 +221,7 @@ export default function Navbar() {
               )}
 
               {/* Account page: Show user name, wishlist and cart icons */}
-              {isAccountPage && userRole !== 'admin' && (
+              {isAccountPage && userRole !== 'admin' && userRole !== 'seller' && (
                 <>
                   {user && (
                     <span style={{
@@ -241,8 +258,8 @@ export default function Navbar() {
             </>
           ) : (
             <>
-              {/* Display user name if logged in */}
-              {user && userRole !== 'admin' && (
+              {/* Display user name if logged in and not a seller or admin */}
+              {user && userRole !== 'admin' && userRole !== 'seller' && (
                 <span style={{
                   fontSize: '14px',
                   fontWeight: '500',
@@ -256,8 +273,8 @@ export default function Navbar() {
                 </span>
               )}
 
-              {/* Full navigation on other pages - hide user features for admin */}
-              {userRole !== 'admin' && (
+              {/* Full navigation on other pages - hide user features for admin and seller */}
+              {userRole !== 'admin' && userRole !== 'seller' && (
                 <>
                   <button
                     className="icon-btn"
@@ -283,7 +300,7 @@ export default function Navbar() {
                 className="icon-btn"
                 onClick={handleAccountClick}
                 aria-label="Profile"
-                title={user ? (userRole === 'admin' ? "Admin Dashboard" : "Account") : "Sign In"}
+                title={user ? (userRole === 'admin' ? "Admin Dashboard" : userRole === 'seller' ? "Seller Dashboard" : "Account") : "Sign In"}
               >
                 <FiUser size={20} />
               </button>

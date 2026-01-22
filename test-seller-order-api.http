@@ -1,0 +1,11 @@
+### Test Seller Order API
+GET http://localhost:5000/api/seller/orders/696a0feb971f078d3f70c088
+Authorization: Bearer YOUR_TOKEN_HERE
+
+### Test with invalid ID to see error handling
+GET http://localhost:5000/api/seller/orders/invalid-id
+Authorization: Bearer YOUR_TOKEN_HERE
+
+### Test with non-existent ID
+GET http://localhost:5000/api/seller/orders/507f1f77bcf86cd799439011
+Authorization: Bearer YOUR_TOKEN_HERE

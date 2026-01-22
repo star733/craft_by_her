@@ -160,7 +160,13 @@ export default function Wishlist() {
         </div>
       ) : (
         <div style={wishlistGridStyle}>
-          {wishlist.products.map((product) => {
+          {wishlist.products
+            .filter(product => {
+              // Exclude test products
+              if (product.title && product.title.toLowerCase().includes("test product")) return false;
+              return true;
+            })
+            .map((product) => {
             const imageUrl = product.image
               ? `http://localhost:5000/uploads/${product.image}`
               : product.img

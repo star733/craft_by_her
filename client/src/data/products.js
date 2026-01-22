@@ -1,3 +1,4 @@
+// Legacy export for backward compatibility
 export const CATEGORIES = [
   "All",
   "Snacks",
@@ -6,4 +7,7 @@ export const CATEGORIES = [
   "Powders",
   "Spices",
 ];
+
+// Re-export category structure
+export { MAIN_CATEGORIES, ALL_SUBCATEGORIES, getSubcategories } from "./categories";
  

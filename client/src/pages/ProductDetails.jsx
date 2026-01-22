@@ -408,7 +408,11 @@ export default function ProductDetails() {
           
           <div className="product-category">
             <span className="product-category-label">Category:</span>
-            <span className="product-category-value">{product.category?.name || product.category || "Uncategorized"}</span>
+            <span className="product-category-value">
+              {product.mainCategory && product.subCategory 
+                ? `${product.mainCategory} > ${product.subCategory}`
+                : product.subCategory || product.category?.name || product.category || "Uncategorized"}
+            </span>
           </div>
 
           {/* Stock Status - Only show when out of stock */}

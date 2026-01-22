@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Frontend Connectivity</title>
+</head>
+<body>
+    <h1>Hub Manager Notification System Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000';
+        const results = document.getElementById('results');
+        
+        function log(message) {
+            console.log(message);
+            results.innerHTML += '<p>' + message + '</p>';
+        }
+        
+        async function testConnectivity() {
+            log('🧪 Testing frontend to backend connectivity...');
+            
+            try {
+                // Test 1: Basic server connectivity
+                log('\n1. Testing basic server connectivity...');
+                const serverResponse = await fetch(`${API_BASE}/`);
+                const serverText = await serverResponse.text();
+                log(`   Status: ${serverResponse.status}`);
+                log(`   Response: ${serverText}`);
+                
+                if (serverResponse.ok) {
+                    log('   ✅ Server is reachable from frontend');
+                } else {
+                    log('   ❌ Server connectivity issue');
+                    return;
+                }
+                
+                // Test 2: Hub manager login
+                log('\n2. Testing hub manager login...');
+                const loginResponse = await fetch(`${API_BASE}/api/hub-managers/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: 'hubmanager@test.com',
+                        password: 'test123'
+                    })
+                });
+                
+                log(`   Login Status: ${loginResponse.status}`);
+                const loginData = await loginResponse.json();
+                log(`   Login Response: ${JSON.stringify(loginData, null, 2)}`);
+                
+                if (loginResponse.ok && loginData.success) {
+                    log('   ✅ Login successful from frontend');
+                    
+                    const managerId = loginData.manager?.managerId;
+                    log(`   Manager ID: ${managerId}`);
+                    
+                    // Test 3: Notifications
+                    log('\n3. Testing notifications...');
+                    const notificationsResponse = await fetch(`${API_BASE}/api/hub-notifications?managerId=${managerId}`);
+                    
+                    log(`   Notifications Status: ${notificationsResponse.status}`);
+                    const notificationsData = await notificationsResponse.json();
+                    log(`   Notifications Response: ${JSON.stringify(notificationsData, null, 2)}`);
+                    
+                    if (notificationsResponse.ok && notificationsData.success) {
+                        log('   ✅ Notifications working from frontend');
+                        log(`   Count: ${notificationsData.notifications?.length || 0}`);
+                        log(`   Unread: ${notificationsData.unreadCount || 0}`);
+                        
+                        if (notificationsData.notifications?.length > 0) {
+                            log('\n   📋 Notifications:');
+                            notificationsData.notifications.forEach((notification, index) => {
+                                log(`     ${index + 1}. ${notification.title} (${notification.read ? 'Read' : 'Unread'})`);
+                            });
+                        }
+                    } else {
+                        log('   ❌ Notifications failed from frontend');
+                    }
+                    
+                } else {
+                    log('   ❌ Login failed from frontend');
+                }
+                
+            } catch (error) {
+                log(`❌ Error: ${error.message}`);
+                console.error('Full error:', error);
+            }
+        }
+        
+        // Run the test
+        testConnectivity();
+    </script>
+</body>
+</html>

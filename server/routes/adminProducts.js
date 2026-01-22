@@ -94,16 +94,110 @@ router.patch("/toggle-status/:id", verify, verifyAdmin, async (req, res) => {
   }
 });
 
+// ✅ Approve product
+router.patch("/approve/:id", verify, verifyAdmin, async (req, res) => {
+  try {
+    console.log("\n=== ✅ APPROVE PRODUCT ===");
+    const productId = req.params.id;
+    console.log("Product ID:", productId);
+    console.log("Admin UID:", req.user.uid);
+    
+    const db = mongoose.connection.db;
+    
+    const product = await db.collection("products").findOne(
+      { _id: new mongoose.Types.ObjectId(productId) }
+    );
+    
+    if (!product) {
+      console.log("❌ Product not found");
+      return res.status(404).json({ error: "Product not found" });
+    }
+    
+    await db.collection("products").updateOne(
+      { _id: new mongoose.Types.ObjectId(productId) },
+      { 
+        $set: { 
+          approvalStatus: "approved",
+          approvedBy: req.user.uid,
+          approvedAt: new Date(),
+          rejectionReason: "",
+          updatedAt: new Date()
+        } 
+      }
+    );
+
+    console.log("✅ Product approved successfully");
+    
+    res.json({ 
+      success: true,
+      message: "Product approved successfully"
+    });
+  } catch (err) {
+    console.error("❌ Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✅ Reject product
+router.patch("/reject/:id", verify, verifyAdmin, async (req, res) => {
+  try {
+    console.log("\n=== ❌ REJECT PRODUCT ===");
+    const productId = req.params.id;
+    const { reason } = req.body;
+    console.log("Product ID:", productId);
+    console.log("Admin UID:", req.user.uid);
+    console.log("Rejection reason:", reason);
+    
+    const db = mongoose.connection.db;
+    
+    const product = await db.collection("products").findOne(
+      { _id: new mongoose.Types.ObjectId(productId) }
+    );
+    
+    if (!product) {
+      console.log("❌ Product not found");
+      return res.status(404).json({ error: "Product not found" });
+    }
+    
+    await db.collection("products").updateOne(
+      { _id: new mongoose.Types.ObjectId(productId) },
+      { 
+        $set: { 
+          approvalStatus: "rejected",
+          approvedBy: req.user.uid,
+          approvedAt: new Date(),
+          rejectionReason: reason || "No reason provided",
+          updatedAt: new Date()
+        } 
+      }
+    );
+
+    console.log("✅ Product rejected successfully");
+    
+    res.json({ 
+      success: true,
+      message: "Product rejected successfully"
+    });
+  } catch (err) {
+    console.error("❌ Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ========================================
 // GENERAL ROUTES
 // ========================================
 
-// ✅ Get all products
-router.get("/", async (req, res) => {
+// ✅ Get all products (with seller information)
+router.get("/", verify, verifyAdmin, async (req, res) => {
   try {
     const db = mongoose.connection.db;
-    const products = await db.collection("products").find({}).sort({ createdAt: -1 }).toArray();
-    console.log(`Found ${products.length} products in database`);
+    const products = await db.collection("products")
+      .find({})
+      .sort({ createdAt: -1 })
+      .toArray();
+    
+    console.log(`Admin view: Found ${products.length} products from all sellers`);
     res.json(products);
   } catch (err) {
     console.error("Error fetching products:", err);
@@ -111,124 +205,39 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ✅ Add new product
-router.post("/", verify, verifyAdmin, upload.single("image"), handleMulterError, async (req, res) => {
+// ========================================
+// ADMIN CANNOT ADD PRODUCTS
+// Sellers add products through /api/seller/products
+// ========================================
+
+// ✅ Get single product by ID (for viewing details)
+router.get("/:id", async (req, res) => {
   try {
-    console.log("=== Product Creation Request ===");
-    const { title, category, stock, variants } = req.body;
-    
-    const trimmedTitle = (title || '').trim();
-    if (!trimmedTitle) {
-      return res.status(400).json({ error: "Title is required" });
-    }
-
-    if (trimmedTitle.length < 3) {
-      return res.status(400).json({ error: "Title must be at least 3 characters" });
-    }
-
-    if (!/^[A-Za-z\s]+$/.test(trimmedTitle)) {
-      return res.status(400).json({ error: "Title can contain letters and spaces only" });
-    }
-
-    if (!category) {
-      return res.status(400).json({ error: "Category is required" });
-    }
-
-    if (!stock) {
-      return res.status(400).json({ error: "Stock is required" });
-    }
-
-    let parsedVariants = [];
-    try {
-      parsedVariants = JSON.parse(variants || "[]");
-    } catch (parseErr) {
-      return res.status(400).json({ error: "Invalid variants format" });
-    }
-
     const db = mongoose.connection.db;
-    const product = {
-      title: trimmedTitle,
-      category,
-      stock: parseInt(stock),
-      variants: parsedVariants,
-      image: req.file ? req.file.filename : null,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date()
-    };
-
-    const result = await db.collection("products").insertOne(product);
-    product._id = result.insertedId;
-
-    console.log("Product created successfully:", product);
-    res.json(product);
-  } catch (err) {
-    console.error("Error saving product:", err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ✅ Update product
-router.put("/:id", verify, verifyAdmin, upload.single("image"), handleMulterError, async (req, res) => {
-  try {
-    const rawTitle = (req.body.title || '').trim();
-    if (!rawTitle) {
-      return res.status(400).json({ error: "Title is required" });
-    }
-    if (rawTitle.length < 3) {
-      return res.status(400).json({ error: "Title must be at least 3 characters" });
-    }
-    if (!/^[A-Za-z\s]+$/.test(rawTitle)) {
-      return res.status(400).json({ error: "Title can contain letters and spaces only" });
-    }
-
-    const updates = {
-      title: rawTitle,
-      category: req.body.category,
-      stock: parseInt(req.body.stock),
-      variants: JSON.parse(req.body.variants),
-      updatedAt: new Date()
-    };
-
-    if (req.file) updates.image = req.file.filename;
-
-    const db = mongoose.connection.db;
-    const result = await db.collection("products").updateOne(
-      { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: updates }
-    );
-
-    if (result.matchedCount === 0) {
-      return res.status(404).json({ error: "Product not found" });
-    }
-
-    const updatedProduct = await db.collection("products").findOne(
+    const product = await db.collection("products").findOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) }
     );
 
-    res.json(updatedProduct);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    res.json(product);
   } catch (err) {
-    console.error("Error updating product:", err);
+    console.error("Error fetching product:", err);
     res.status(400).json({ error: err.message });
   }
 });
 
-// ✅ Delete product (kept for backward compatibility)
-router.delete("/:id", verify, verifyAdmin, async (req, res) => {
-  try {
-    const db = mongoose.connection.db;
-    const result = await db.collection("products").deleteOne(
-      { _id: new mongoose.Types.ObjectId(req.params.id) }
-    );
+// ========================================
+// ADMIN CANNOT EDIT PRODUCTS
+// Sellers edit their products through /api/seller/products
+// ========================================
 
-    if (result.deletedCount === 0) {
-      return res.status(404).json({ error: "Product not found" });
-    }
+// ========================================
+// ADMIN CAN ONLY TOGGLE STATUS (ENABLE/DISABLE)
+// ========================================
 
-    res.json({ message: "Product deleted" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+// Note: toggle-status route is already above at line ~52
 
 module.exports = router;

@@ -26,61 +26,64 @@ export default function Home() {
       .then((res) => res.json())
       .then((data) => {
         const list = Array.isArray(data) ? data : (data?.products || []);
-        setProducts(list);
+        // Exclude test products
+        const filteredList = list.filter(p => {
+          if (p.title && p.title.toLowerCase().includes("test product")) return false;
+          return true;
+        });
+        setProducts(filteredList);
 
-        // User-requested fixed bestsellers (case-insensitive)
-        const WANTED_TITLES = [
-          "achappam",
-          "strawberry cake",
-          "fish pickle",
-          "banana dry",
-          "chips",
-        ];
+        // Select bestsellers: 3 craft products and 2 food products
+        const craftProducts = filteredList.filter((p) => {
+          // Check new structure first
+          if (p.mainCategory === "Crafts") return true;
+          // Check legacy structure - if category contains "craft" (case-insensitive)
+          if (p.category && typeof p.category === 'string' && p.category.toLowerCase().includes('craft')) return true;
+          return false;
+        });
+        
+        const foodProducts = filteredList.filter((p) => {
+          // Check new structure first
+          if (p.mainCategory === "Food") return true;
+          // Check legacy structure - if mainCategory is not Crafts and category doesn't contain "craft"
+          if (p.mainCategory && p.mainCategory !== "Crafts") return true;
+          // If no mainCategory, check if category exists and doesn't contain "craft"
+          if (p.category && typeof p.category === 'string' && !p.category.toLowerCase().includes('craft')) return true;
+          // If category is an object (legacy), assume it's food
+          if (p.category && typeof p.category === 'object') return true;
+          return false;
+        });
 
-        const normalize = (s) => (s || "").toLowerCase().trim();
-        const wantedIndex = (title) => {
-          const t = normalize(title);
-          return WANTED_TITLES.findIndex((w) => {
-            const wnorm = normalize(w);
-            // allow contains either way to be lenient (e.g., Banana Chips / Chips)
-            return t === wnorm || t.includes(wnorm) || wnorm.includes(t);
-          });
-        };
+        // Get 3 craft products (prioritize by creation date or tag)
+        const selectedCrafts = [...craftProducts]
+          .sort((a, b) => {
+            // Prioritize tagged bestsellers
+            const aIsTagged = (a.tag || "").toLowerCase().includes("bestseller") || a.isBestseller === true;
+            const bIsTagged = (b.tag || "").toLowerCase().includes("bestseller") || b.isBestseller === true;
+            if (aIsTagged && !bIsTagged) return -1;
+            if (!aIsTagged && bIsTagged) return 1;
+            // Then by creation date (newest first)
+            return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+          })
+          .slice(0, 3);
 
-        // Pick and order according to WANTED_TITLES
-        let picks = list
-          .map((p) => ({ p, idx: wantedIndex(p.title) }))
-          .filter((x) => x.idx !== -1)
-          .sort((a, b) => a.idx - b.idx)
-          .map((x) => x.p)
-          .slice(0, 5);
+        // Get 2 food products (prioritize by creation date or tag)
+        const selectedFood = [...foodProducts]
+          .sort((a, b) => {
+            // Prioritize tagged bestsellers
+            const aIsTagged = (a.tag || "").toLowerCase().includes("bestseller") || a.isBestseller === true;
+            const bIsTagged = (b.tag || "").toLowerCase().includes("bestseller") || b.isBestseller === true;
+            if (aIsTagged && !bIsTagged) return -1;
+            if (!aIsTagged && bIsTagged) return 1;
+            // Then by creation date (newest first)
+            return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+          })
+          .slice(0, 2);
 
-        // If fewer than 5 found, top up from tagged/flagged bestsellers
-        if (picks.length < 5) {
-          const extras = list.filter(
-            (p) =>
-              (p.tag || "").toLowerCase().includes("bestseller") || p.isBestseller === true
-          );
-          for (const item of extras) {
-            if (!picks.find((x) => x._id === item._id) && picks.length < 5) {
-              picks.push(item);
-            }
-          }
-        }
+        // Combine: 3 crafts + 2 food = 5 bestsellers
+        const picks = [...selectedCrafts, ...selectedFood];
 
-        // Still fewer? fill with latest items
-        if (picks.length < 5) {
-          const latest = [...list].sort(
-            (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
-          );
-          for (const item of latest) {
-            if (!picks.find((x) => x._id === item._id) && picks.length < 5) {
-              picks.push(item);
-            }
-          }
-        }
-
-        setBestsellers(picks.slice(0, 5));
+        setBestsellers(picks);
       })
       .catch((err) => console.error("Failed to load products:", err));
   }, []);

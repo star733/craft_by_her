@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Frontend Notifications</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .notification { border: 1px solid #ddd; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .unread { background-color: #f0f8ff; border-color: #007bff; }
+        .success { color: green; }
+        .error { color: red; }
+        button { padding: 10px 20px; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>Hub Manager Notification Test</h1>
+    <div id="results"></div>
+    
+    <button onclick="testLogin()">1. Test Login</button>
+    <button onclick="testNotifications()">2. Test Notifications</button>
+    <button onclick="testFullFlow()">3. Test Full Flow</button>
+    
+    <script>
+        const API_BASE = 'http://localhost:5000';
+        const results = document.getElementById('results');
+        
+        function log(message, type = 'info') {
+            console.log(message);
+            const p = document.createElement('p');
+            p.innerHTML = message;
+            p.className = type;
+            results.appendChild(p);
+        }
+        
+        function clearResults() {
+            results.innerHTML = '';
+        }
+        
+        async function testLogin() {
+            clearResults();
+            log('🧪 Testing Hub Manager Login...');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/hub-managers/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: 'hubmanager@test.com',
+                        password: 'test123'
+                    })
+                });
+                
+                log(`Login Status: ${response.status}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        log(`✅ Login successful!`, 'success');
+                        log(`Manager: ${data.manager.name} (${data.manager.managerId})`);
+                        log(`Hub: ${data.manager.hubId} - ${data.manager.hubName}`);
+                        log(`Token: ${data.token ? 'Received' : 'Missing'}`);
+                        
+                        // Store in localStorage like the real app does
+                        localStorage.setItem('hubManagerToken', data.token);
+                        localStorage.setItem('hubManager', JSON.stringify(data.manager));
+                        
+                        log('✅ Stored in localStorage', 'success');
+                    } else {
+                        log(`❌ Login failed: ${data.error}`, 'error');
+                    }
+                } else {
+                    log(`❌ Login request failed: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Login error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testNotifications() {
+            log('🔔 Testing Notifications...');
+            
+            const managerData = localStorage.getItem('hubManager');
+            if (!managerData) {
+                log('❌ No manager data in localStorage. Please login first.', 'error');
+                return;
+            }
+            
+            const manager = JSON.parse(managerData);
+            const managerId = manager.managerId;
+            
+            log(`Using Manager ID: ${managerId}`);
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/hub-notifications?managerId=${managerId}`);
+                
+                log(`Notifications Status: ${response.status}`);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.success) {
+                        log(`✅ Notifications fetched successfully!`, 'success');
+                        log(`Total: ${data.notifications.length}, Unread: ${data.unreadCount}`);
+                        
+                        if (data.notifications.length > 0) {
+                            log('<h3>📋 Notifications:</h3>');
+                            data.notifications.forEach((notification, index) => {
+                                const div = document.createElement('div');
+                                div.className = \`notification \${!notification.read ? 'unread' : ''}\`;
+                                div.innerHTML = \`
+                                    <strong>\${index + 1}. \${notification.title}</strong><br>
+                                    <em>\${notification.message}</em><br>
+                                    <small>Created: \${new Date(notification.createdAt).toLocaleString()}</small><br>
+                                    <small>Status: \${notification.read ? 'Read' : 'Unread'}</small>
+                                \`;
+                                results.appendChild(div);
+                            });
+                        } else {
+                            log('No notifications found');
+                        }
+                    } else {
+                        log(`❌ Notifications failed: ${data.error}`, 'error');
+                    }
+                } else {
+                    log(`❌ Notifications request failed: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Notifications error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testFullFlow() {
+            clearResults();
+            log('🚀 Testing Full Flow...');
+            
+            // Step 1: Login
+            await testLogin();
+            
+            // Wait a bit
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Step 2: Test notifications
+            await testNotifications();
+            
+            log('🎯 Full flow test completed!', 'success');
+        }
+        
+        // Auto-run on page load
+        window.onload = function() {
+            log('🌐 Frontend notification test loaded');
+            log('Click buttons above to test different parts of the system');
+        };
+    </script>
+</body>
+</html>

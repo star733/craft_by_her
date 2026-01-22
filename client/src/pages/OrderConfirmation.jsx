@@ -258,14 +258,39 @@ export default function OrderConfirmation() {
 
   const getStatusText = (status) => {
     switch (status) {
-      case "pending": return "Order Pending";
-      case "confirmed": return "Order Confirmed";
-      case "preparing": return "Preparing Your Order";
+      case "pending": return "Ordered";
+      case "confirmed": return "Ordered";
+      case "preparing": return "Ordered";
       case "shipped": return "Shipped";
+      case "in_transit_to_customer_hub": return "Shipped";
+      case "at_customer_hub": return "Out for Delivery";
+      case "out_for_delivery": return "Out for Delivery";
+      case "ready_for_pickup": return "Out for Delivery";
       case "delivered": return "Delivered";
       case "cancelled": return "Cancelled";
       default: return status;
     }
+  };
+
+  // Get status progression steps
+  const getStatusSteps = (orderStatus) => {
+    const status = orderStatus || "pending";
+    const steps = [
+      { key: "ordered", label: "Ordered", status: ["pending", "confirmed", "preparing", "shipped", "in_transit_to_customer_hub", "at_customer_hub", "out_for_delivery", "ready_for_pickup", "delivered"] },
+      { key: "shipped", label: "Shipped", status: ["shipped", "in_transit_to_customer_hub", "at_customer_hub", "out_for_delivery", "ready_for_pickup", "delivered"] },
+      { key: "out_for_delivery", label: "Out for Delivery", status: ["at_customer_hub", "out_for_delivery", "ready_for_pickup", "delivered"] },
+      { key: "delivered", label: "Delivered", status: ["delivered"] }
+    ];
+
+    return steps.map((step, index) => {
+      const isCompleted = step.status.includes(status);
+      const isCurrent = index === steps.findIndex(s => s.status.includes(status));
+      return {
+        ...step,
+        completed: isCompleted && !isCurrent,
+        current: isCurrent
+      };
+    });
   };
 
   const getPaymentStatusText = (status, method) => {
@@ -321,15 +346,15 @@ export default function OrderConfirmation() {
       {/* Success Message */}
       {paymentSuccess && (
         <div style={{ 
-          background: "#d4edda", 
-          border: "1px solid #c3e6cb", 
-          color: "#155724", 
+          background: "var(--accent-soft, #f3e7dc)", 
+          border: "1px solid var(--border, #ead9c9)", 
+          color: "var(--brand, #8b5e34)", 
           padding: "16px", 
           borderRadius: "8px", 
           marginBottom: "30px",
           textAlign: "center"
         }}>
-          <h2 style={{ margin: "0 0 8px 0", color: "#155724" }}>🎉 Order Placed Successfully!</h2>
+          <h2 style={{ margin: "0 0 8px 0", color: "var(--brand, #8b5e34)" }}>🎉 Order Placed Successfully!</h2>
           <p style={{ margin: 0 }}>Thank you for your order. We'll start preparing it right away!</p>
         </div>
       )}
@@ -379,9 +404,9 @@ export default function OrderConfirmation() {
             <strong>Estimated Delivery:</strong> {getEstimatedDelivery()}
           </div>
           {live.delivered && (
-            <div style={{ gridColumn: "1 / -1", marginTop: "12px", padding: "12px", background: "#d4edda", borderRadius: "8px", border: "1px solid #c3e6cb" }}>
-              <strong style={{ color: "#155724" }}>✅ Order Delivered!</strong>
-              <div style={{ fontSize: "12px", color: "#155724", marginTop: "4px" }}>
+            <div style={{ gridColumn: "1 / -1", marginTop: "12px", padding: "12px", background: "var(--accent-soft, #f3e7dc)", borderRadius: "8px", border: "1px solid var(--border, #ead9c9)" }}>
+              <strong style={{ color: "var(--brand, #8b5e34)" }}>✅ Order Delivered!</strong>
+              <div style={{ fontSize: "12px", color: "var(--brand, #8b5e34)", marginTop: "4px" }}>
                 Your order has been successfully delivered to your address.
               </div>
             </div>
@@ -389,41 +414,107 @@ export default function OrderConfirmation() {
         </div>
       </div>
 
-      {/* Delivery Tracking (Live Map + Timeline) */}
+      {/* Order Status */}
       <div style={{ background: "#fff", padding: "24px", borderRadius: "12px", marginBottom: "24px", border: "1px solid #ddd" }}>
-        <h3 style={{ marginBottom: "20px", color: "#5c4033" }}>Delivery Tracking</h3>
-        {/* Link to dedicated live tracking page (simulator) */}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px", gap: "8px" }}>
-          <button
-            onClick={() => navigate(`/track/${order._id}`)}
-            style={{
-              padding: "8px 12px",
-              background: "#5c4033",
-              color: "white",
-              border: "none",
-              borderRadius: "8px",
-              cursor: "pointer",
-              fontSize: "12px",
-              fontWeight: 600
-            }}
-          >
-            🗺 Track Order (In App)
-          </button>
-        </div>
-        {/* Replace embedded live widgets with simple CTA to Track page */}
-        <div style={{ background: "#f9fafb", padding: "12px", border: "1px dashed #d1d5db", borderRadius: "10px", marginBottom: "16px", fontSize: "14px", color: "#374151" }}>
-          To see live map, timeline, ETA and auto updates, use the Track Order page.
-        </div>
+        <h3 style={{ marginBottom: "20px", color: "#5c4033" }}>Order Status</h3>
         
-        {/* Simple status display without timeline */}
-        <div style={{ background: "#f8f9fa", padding: "16px", borderRadius: "8px", textAlign: "center" }}>
-          <div style={{ fontSize: "16px", fontWeight: "600", color: "#495057", marginBottom: "8px" }}>
+        {/* Status Progression Timeline */}
+        <div style={{ position: "relative", padding: "20px 0" }}>
+          {getStatusSteps(live.delivered ? "delivered" : order.orderStatus).map((step, index, steps) => (
+            <div key={step.key} style={{ position: "relative", marginBottom: index < steps.length - 1 ? "24px" : "0" }}>
+              {/* Connecting Line */}
+              {index < steps.length - 1 && (
+                <div style={{
+                  position: "absolute",
+                  left: "20px",
+                  top: "40px",
+                  width: "2px",
+                  height: "40px",
+                  backgroundColor: step.completed ? "#28a745" : "#e0e0e0",
+                  zIndex: 0
+                }}></div>
+              )}
+
+              {/* Status Circle */}
+              <div style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "16px"
+              }}>
+                <div style={{
+                  width: "40px",
+                  height: "40px",
+                  borderRadius: "50%",
+                  backgroundColor: step.completed ? "#28a745" : step.current ? getStatusColor(live.delivered ? "delivered" : order.orderStatus) : "#e0e0e0",
+                  border: "3px solid #fff",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+                  zIndex: 1,
+                  flexShrink: 0
+                }}>
+                  {step.completed && (
+                    <span style={{ color: "white", fontSize: "18px", fontWeight: "bold" }}>✓</span>
+                  )}
+                  {step.current && !step.completed && (
+                    <span style={{ color: "white", fontSize: "12px" }}>●</span>
+                  )}
+                </div>
+
+                {/* Status Label */}
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontSize: "16px",
+                    fontWeight: step.current ? "700" : step.completed ? "600" : "400",
+                    color: step.completed || step.current ? "#333" : "#999",
+                    marginBottom: "4px"
+                  }}>
+                    {step.label}
+                  </div>
+                  {step.current && (
+                    <div style={{
+                      fontSize: "12px",
+                      color: getStatusColor(live.delivered ? "delivered" : order.orderStatus),
+                      fontWeight: "600"
+                    }}>
+                      Current Status
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Status Message */}
+        <div style={{ 
+          marginTop: "24px", 
+          padding: "16px", 
+          background: live.delivered || order.orderStatus === "delivered" ? "var(--accent-soft, #f3e7dc)" : "#f8f9fa", 
+          borderRadius: "8px", 
+          textAlign: "center",
+          border: live.delivered || order.orderStatus === "delivered" ? "1px solid var(--border, #ead9c9)" : "1px solid #e0e0e0"
+        }}>
+          <div style={{ 
+            fontSize: "16px", 
+            fontWeight: "600", 
+            color: live.delivered || order.orderStatus === "delivered" ? "var(--brand, #8b5e34)" : "#495057", 
+            marginBottom: "8px" 
+          }}>
             Current Status: {getStatusText(live.delivered ? "delivered" : order.orderStatus)}
           </div>
-          <div style={{ fontSize: "14px", color: "#6c757d" }}>
-            {order.orderStatus === "delivered" ? 
-              "Your order has been successfully delivered!" : 
-              "Track your order in real-time using the Track Order page above."
+          <div style={{ 
+            fontSize: "14px", 
+            color: live.delivered || order.orderStatus === "delivered" ? "var(--brand, #8b5e34)" : "#6c757d" 
+          }}>
+            {live.delivered || order.orderStatus === "delivered" ? 
+              "✅ Your order has been successfully delivered!" : 
+              order.orderStatus === "shipped" || order.orderStatus === "in_transit_to_customer_hub" ?
+              "🚚 Your order has been shipped and is on the way!" :
+              order.orderStatus === "at_customer_hub" || order.orderStatus === "out_for_delivery" || order.orderStatus === "ready_for_pickup" ?
+              "📦 Your order is out for delivery!" :
+              "⏳ Your order is being processed."
             }
           </div>
         </div>

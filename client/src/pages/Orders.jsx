@@ -51,21 +51,31 @@ export default function Orders() {
       case "pending": return "#ffc107";
       case "confirmed": return "#17a2b8";
       case "preparing": return "#fd7e14";
+      case "at_seller_hub": return "#fd7e14";
       case "shipped": return "#6f42c1";
+      case "out_for_delivery": return "#20c997";
       case "delivered": return "#28a745";
       case "cancelled": return "#dc3545";
+      // Legacy status mappings
+      case "in_transit_to_customer_hub": return "#6f42c1";
+      case "at_customer_hub": return "#20c997";
       default: return "#6c757d";
     }
   };
 
   const getStatusText = (status) => {
     switch (status) {
-      case "pending": return "Order Pending";
+      case "pending": return "Order Placed";
       case "confirmed": return "Order Confirmed";
-      case "preparing": return "Preparing Your Order";
+      case "preparing": return "Processing";
+      case "at_seller_hub": return "Processing";
       case "shipped": return "Shipped";
+      case "out_for_delivery": return "Out for Delivery";
       case "delivered": return "Delivered";
       case "cancelled": return "Cancelled";
+      // Legacy status mappings
+      case "in_transit_to_customer_hub": return "Shipped";
+      case "at_customer_hub": return "Out for Delivery";
       default: return status;
     }
   };
@@ -131,7 +141,7 @@ export default function Orders() {
 
   const canCancelOrder = (order) => {
     // Allow canceling if order is not yet shipped or delivered
-    return ["pending", "confirmed", "preparing"].includes(order.orderStatus);
+    return ["pending", "confirmed", "preparing", "at_seller_hub"].includes(order.orderStatus);
   };
 
   if (loading) {

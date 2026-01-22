@@ -2,6 +2,15 @@ import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { toast } from "react-toastify";
 
+/**
+ * DELIVERY BOY CREDENTIAL FLOW:
+ * 1. Admin creates delivery boy account in Admin Dashboard
+ * 2. Admin sets username & password during account creation
+ * 3. Admin shares credentials with delivery boy (via email/phone/SMS/in-person)
+ * 4. Delivery boy uses these credentials to login here
+ * 5. Account must be "active" status to successfully login
+ */
+
 export default function DeliveryLogin() {
   const navigate = useNavigate();
   const [form, setForm] = useState({
@@ -9,9 +18,69 @@ export default function DeliveryLogin() {
     password: "",
   });
   const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState({
+    username: "",
+    password: "",
+  });
+  const [touched, setTouched] = useState({
+    username: false,
+    password: false,
+  });
+
+  // Validation functions
+  const validateUsername = (username) => {
+    if (!username || username.trim() === "") {
+      return "Username is required";
+    }
+    if (username.length < 3) {
+      return "Username must be at least 3 characters";
+    }
+    if (username.length > 20) {
+      return "Username must be less than 20 characters";
+    }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      return "Username can only contain letters, numbers, and underscores";
+    }
+    return "";
+  };
+
+  const validatePassword = (password) => {
+    if (!password || password.trim() === "") {
+      return "Password is required";
+    }
+    if (password.length < 6) {
+      return "Password must be at least 6 characters";
+    }
+    return "";
+  };
+
+  const validateForm = () => {
+    const usernameError = validateUsername(form.username);
+    const passwordError = validatePassword(form.password);
+    
+    setErrors({
+      username: usernameError,
+      password: passwordError,
+    });
+
+    return !usernameError && !passwordError;
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Mark all fields as touched
+    setTouched({
+      username: true,
+      password: true,
+    });
+
+    // Validate form
+    if (!validateForm()) {
+      toast.error("Please fix the errors before submitting");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -49,10 +118,30 @@ export default function DeliveryLogin() {
   };
 
   const handleChange = (e) => {
+    const { name, value } = e.target;
     setForm({
       ...form,
-      [e.target.name]: e.target.value,
+      [name]: value,
     });
+
+    // Real-time validation
+    if (touched[name]) {
+      if (name === "username") {
+        setErrors({ ...errors, username: validateUsername(value) });
+      } else if (name === "password") {
+        setErrors({ ...errors, password: validatePassword(value) });
+      }
+    }
+  };
+
+  const handleBlur = (field) => {
+    setTouched({ ...touched, [field]: true });
+    
+    if (field === "username") {
+      setErrors({ ...errors, username: validateUsername(form.username) });
+    } else if (field === "password") {
+      setErrors({ ...errors, password: validatePassword(form.password) });
+    }
   };
 
   return (
@@ -120,21 +209,36 @@ export default function DeliveryLogin() {
                 name="username"
                 value={form.username}
                 onChange={handleChange}
-                required
+                onBlur={() => handleBlur("username")}
                 style={{
                   width: "100%",
                   padding: "12px 16px",
-                  border: "2px solid #e1e5e9",
+                  border: `2px solid ${
+                    touched.username && errors.username
+                      ? "#dc3545"
+                      : touched.username && !errors.username
+                      ? "#28a745"
+                      : "#e1e5e9"
+                  }`,
                   borderRadius: "8px",
                   fontSize: "14px",
                   outline: "none",
                   transition: "border-color 0.2s",
-                  boxSizing: "border-box"
+                  boxSizing: "border-box",
+                  backgroundColor: touched.username && errors.username ? "#fff5f5" : "#fff"
                 }}
                 placeholder="Enter your username"
-                onFocus={(e) => e.target.style.borderColor = "#5c4033"}
-                onBlur={(e) => e.target.style.borderColor = "#e1e5e9"}
               />
+              {touched.username && errors.username && (
+                <span style={{
+                  display: "block",
+                  color: "#dc3545",
+                  fontSize: "12px",
+                  marginTop: "4px"
+                }}>
+                  {errors.username}
+                </span>
+              )}
             </div>
 
             <div style={{ marginBottom: "24px" }}>
@@ -152,21 +256,36 @@ export default function DeliveryLogin() {
                 name="password"
                 value={form.password}
                 onChange={handleChange}
-                required
+                onBlur={() => handleBlur("password")}
                 style={{
                   width: "100%",
                   padding: "12px 16px",
-                  border: "2px solid #e1e5e9",
+                  border: `2px solid ${
+                    touched.password && errors.password
+                      ? "#dc3545"
+                      : touched.password && !errors.password
+                      ? "#28a745"
+                      : "#e1e5e9"
+                  }`,
                   borderRadius: "8px",
                   fontSize: "14px",
                   outline: "none",
                   transition: "border-color 0.2s",
-                  boxSizing: "border-box"
+                  boxSizing: "border-box",
+                  backgroundColor: touched.password && errors.password ? "#fff5f5" : "#fff"
                 }}
                 placeholder="Enter your password"
-                onFocus={(e) => e.target.style.borderColor = "#5c4033"}
-                onBlur={(e) => e.target.style.borderColor = "#e1e5e9"}
               />
+              {touched.password && errors.password && (
+                <span style={{
+                  display: "block",
+                  color: "#dc3545",
+                  fontSize: "12px",
+                  marginTop: "4px"
+                }}>
+                  {errors.password}
+                </span>
+              )}
             </div>
 
             <button
@@ -195,33 +314,6 @@ export default function DeliveryLogin() {
               {loading ? "Signing in..." : "Sign In"}
             </button>
           </form>
-
-          {/* Status Info */}
-          <div style={{
-            background: "#f8f9fa",
-            padding: "16px",
-            borderRadius: "8px",
-            border: "1px solid #e9ecef",
-            marginBottom: "20px"
-          }}>
-            <h4 style={{
-              margin: "0 0 8px 0",
-              fontSize: "14px",
-              fontWeight: "600",
-              color: "#5c4033"
-            }}>
-              Account Status
-            </h4>
-            <p style={{
-              margin: 0,
-              fontSize: "13px",
-              color: "#666",
-              lineHeight: "1.4"
-            }}>
-              Your account must be <strong>approved by admin</strong> before you can start making deliveries. 
-              Contact support if you need assistance.
-            </p>
-          </div>
 
           {/* Links */}
           <div style={{

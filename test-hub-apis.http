@@ -1,0 +1,226 @@
+### CraftedByHer Hub System API Tests
+### Use with REST Client extension in VS Code or import to Postman
+
+@baseUrl = http://localhost:5000
+@adminToken = YOUR_ADMIN_FIREBASE_TOKEN_HERE
+@hubManagerToken = YOUR_HUB_MANAGER_JWT_TOKEN_HERE
+@userToken = YOUR_USER_FIREBASE_TOKEN_HERE
+
+###############################################################################
+# HUB MANAGEMENT (Admin Only)
+###############################################################################
+
+### 1. Get All Hubs
+GET {{baseUrl}}/api/hubs
+Authorization: Bearer {{adminToken}}
+
+### 2. Get Hub by ID
+GET {{baseUrl}}/api/hubs/HUB0007
+Authorization: Bearer {{adminToken}}
+
+### 3. Get Hub by District (Public)
+GET {{baseUrl}}/api/hubs/district/Ernakulam
+
+### 4. Get All Districts with Hubs (Public)
+GET {{baseUrl}}/api/hubs/public/districts
+
+### 5. Update Hub Status
+PATCH {{baseUrl}}/api/hubs/HUB0007/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "active"
+}
+
+### 6. Assign Manager to Hub
+PATCH {{baseUrl}}/api/hubs/HUB0007/assign-manager
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "managerId": "HM0001"
+}
+
+###############################################################################
+# HUB MANAGER MANAGEMENT (Admin Only)
+###############################################################################
+
+### 7. Get All Hub Managers
+GET {{baseUrl}}/api/hub-managers
+Authorization: Bearer {{adminToken}}
+
+### 8. Create Hub Manager
+POST {{baseUrl}}/api/hub-managers
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "phone": "9876543211",
+  "username": "john_hub",
+  "password": "secure123",
+  "address": {
+    "street": "Manager Street",
+    "city": "Kochi",
+    "state": "Kerala",
+    "pincode": "682001"
+  },
+  "hubId": "HUB0007"
+}
+
+### 9. Update Hub Manager Status
+PATCH {{baseUrl}}/api/hub-managers/HM0001/status
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "status": "active"
+}
+
+###############################################################################
+# HUB MANAGER AUTHENTICATION
+###############################################################################
+
+### 10. Hub Manager Login
+POST {{baseUrl}}/api/hub-managers/login
+Content-Type: application/json
+
+{
+  "username": "testmanager",
+  "password": "test123"
+}
+
+### 11. Get Hub Manager Profile
+GET {{baseUrl}}/api/hub-managers/profile/me
+Authorization: Bearer {{hubManagerToken}}
+
+### 12. Get Hub Manager Dashboard Stats
+GET {{baseUrl}}/api/hub-managers/dashboard/stats
+Authorization: Bearer {{hubManagerToken}}
+
+### 13. Get Orders at Hub
+GET {{baseUrl}}/api/hub-managers/orders/hub?location=seller_hub
+Authorization: Bearer {{hubManagerToken}}
+
+###############################################################################
+# HUB ORDER PROCESSING
+###############################################################################
+
+### 14. Move Order to Seller Hub
+# Replace ORDER_ID with actual order ID
+POST {{baseUrl}}/api/hub-orders/ORDER_ID/move-to-seller-hub
+Authorization: Bearer {{userToken}}
+
+### 15. Admin Approve and Move to Customer Hub
+# Replace ORDER_ID with actual order ID
+POST {{baseUrl}}/api/hub-orders/ORDER_ID/approve-and-move
+Authorization: Bearer {{adminToken}}
+
+### 16. Customer Set Delivery Preference (Self Pickup)
+# Replace ORDER_ID with actual order ID
+PATCH {{baseUrl}}/api/hub-orders/ORDER_ID/delivery-preference
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "preference": "self_pickup"
+}
+
+### 17. Customer Set Delivery Preference (Delivery Boy)
+# Replace ORDER_ID with actual order ID
+PATCH {{baseUrl}}/api/hub-orders/ORDER_ID/delivery-preference
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "preference": "delivery_boy"
+}
+
+### 18. Customer Self-Pickup Confirmation
+# Replace ORDER_ID with actual order ID
+POST {{baseUrl}}/api/hub-orders/ORDER_ID/self-pickup
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "pickedUpBy": "John Doe",
+  "idProof": "Aadhar Card"
+}
+
+### 19. Get Order Hub Tracking
+# Replace ORDER_ID with actual order ID
+GET {{baseUrl}}/api/hub-orders/ORDER_ID/tracking
+
+###############################################################################
+# COMPLETE ORDER FLOW TEST
+###############################################################################
+
+### Step 1: Place Order (Use existing order API)
+POST {{baseUrl}}/api/orders
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "items": [
+    {
+      "productId": "PRODUCT_ID",
+      "quantity": 1,
+      "variant": {
+        "weight": "100g",
+        "price": 50
+      }
+    }
+  ],
+  "buyerDetails": {
+    "name": "Test Customer",
+    "email": "customer@test.com",
+    "phone": "9876543210",
+    "address": {
+      "street": "Test Street",
+      "city": "Kochi",
+      "state": "Kerala",
+      "pincode": "682001"
+    }
+  },
+  "paymentMethod": "cod"
+}
+
+### Step 2: Move to Seller Hub (Copy ORDER_ID from Step 1)
+POST {{baseUrl}}/api/hub-orders/ORDER_ID/move-to-seller-hub
+Authorization: Bearer {{userToken}}
+
+### Step 3: Admin Approve (Copy ORDER_ID from Step 1)
+POST {{baseUrl}}/api/hub-orders/ORDER_ID/approve-and-move
+Authorization: Bearer {{adminToken}}
+
+### Step 4: Customer Choose Preference (Copy ORDER_ID from Step 1)
+PATCH {{baseUrl}}/api/hub-orders/ORDER_ID/delivery-preference
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "preference": "self_pickup"
+}
+
+### Step 5: Customer Self-Pickup (Copy ORDER_ID from Step 1)
+POST {{baseUrl}}/api/hub-orders/ORDER_ID/self-pickup
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+  "pickedUpBy": "Test Customer",
+  "idProof": "Aadhar"
+}
+
+###############################################################################
+# NOTES
+###############################################################################
+
+# 1. Replace ORDER_ID with actual MongoDB ObjectId from your orders
+# 2. Replace PRODUCT_ID with actual product ID from your database
+# 3. Get adminToken by logging in as admin via Firebase
+# 4. Get hubManagerToken from hub manager login response (Step 10)
+# 5. Get userToken by logging in as regular user via Firebase
+# 6. Server must be running on http://localhost:5000

@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Approval Tester</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+    
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    
+    .section {
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+    
+    .section h2 {
+      color: #333;
+      margin-bottom: 15px;
+      font-size: 20px;
+    }
+    
+    .input-group {
+      margin-bottom: 15px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 5px;
+      color: #555;
+      font-weight: 500;
+      font-size: 14px;
+    }
+    
+    input {
+      width: 100%;
+      padding: 10px 15px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+    
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+    
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-right: 10px;
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    .output {
+      margin-top: 20px;
+      padding: 15px;
+      background: #2d3748;
+      color: #f7fafc;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    
+    .success {
+      color: #48bb78;
+      font-weight: bold;
+    }
+    
+    .error {
+      color: #f56565;
+      font-weight: bold;
+    }
+    
+    .info {
+      color: #4299e1;
+    }
+    
+    .warning {
+      color: #ed8936;
+    }
+    
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+    
+    .status-success {
+      background: #c6f6d5;
+      color: #22543d;
+    }
+    
+    .status-error {
+      background: #fed7d7;
+      color: #742a2a;
+    }
+    
+    .status-pending {
+      background: #feebc8;
+      color: #7c2d12;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🚚 Order Approval & Dispatch Tester</h1>
+    <p class="subtitle">Test the admin order approval functionality</p>
+    
+    <div class="section">
+      <h2>Configuration</h2>
+      <div class="input-group">
+        <label for="apiBase">API Base URL:</label>
+        <input type="text" id="apiBase" value="http://localhost:5000" placeholder="http://localhost:5000">
+      </div>
+      <div class="input-group">
+        <label for="adminToken">Admin Token (Get from browser localStorage):</label>
+        <input type="password" id="adminToken" placeholder="Paste your Firebase auth token here">
+      </div>
+    </div>
+    
+    <div class="section">
+      <h2>Actions</h2>
+      <button onclick="getPendingOrders()">📋 Get Pending Orders</button>
+      <button onclick="testApproval()">✅ Test Approval (First Order)</button>
+      <button onclick="clearOutput()">🗑️ Clear Output</button>
+    </div>
+    
+    <div class="section">
+      <h2>Output Log</h2>
+      <div class="output" id="output">
+        Waiting for action...
+      </div>
+    </div>
+  </div>
+  
+  <script>
+    let pendingOrders = [];
+    
+    function log(message, type = 'info') {
+      const output = document.getElementById('output');
+      const timestamp = new Date().toLocaleTimeString();
+      let className = type;
+      let icon = '';
+      
+      switch(type) {
+        case 'success': icon = '✅'; break;
+        case 'error': icon = '❌'; break;
+        case 'warning': icon = '⚠️'; break;
+        case 'info': icon = '📝'; break;
+      }
+      
+      const line = `[${timestamp}] ${icon} ${message}`;
+      
+      if (output.textContent === 'Waiting for action...') {
+        output.textContent = '';
+      }
+      
+      const span = document.createElement('span');
+      span.className = className;
+      span.textContent = line + '\n';
+      output.appendChild(span);
+      output.scrollTop = output.scrollHeight;
+    }
+    
+    function clearOutput() {
+      document.getElementById('output').textContent = 'Waiting for action...';
+    }
+    
+    async function getPendingOrders() {
+      const apiBase = document.getElementById('apiBase').value;
+      const token = document.getElementById('adminToken').value;
+      
+      if (!token) {
+        log('Please enter your admin token', 'error');
+        return;
+      }
+      
+      log('Fetching pending orders...', 'info');
+      
+      try {
+        const response = await fetch(`${apiBase}/api/admin/orders/hub-orders/pending`, {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        
+        log(`Response status: ${response.status}`, 'info');
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          pendingOrders = data.orders;
+          log(`Found ${pendingOrders.length} pending orders`, 'success');
+          
+          if (pendingOrders.length > 0) {
+            log('\\nPending Orders:', 'info');
+            pendingOrders.forEach((order, index) => {
+              log(`${index + 1}. Order #${order.orderNumber}`, 'info');
+              log(`   Customer: ${order.customer}`, 'info');
+              log(`   Hub: ${order.hubInfo?.hubName} (${order.hubInfo?.hubDistrict})`, 'info');
+              log(`   Amount: ₹${order.totalAmount}`, 'info');
+              log(`   Items: ${order.itemCount}`, 'info');
+              log(`   Address: ${JSON.stringify(order.customerAddress)}`, 'info');
+            });
+          } else {
+            log('No pending orders found', 'warning');
+          }
+        } else {
+          log(`Error: ${data.error || 'Unknown error'}`, 'error');
+        }
+      } catch (error) {
+        log(`Network error: ${error.message}`, 'error');
+        console.error('Full error:', error);
+      }
+    }
+    
+    async function testApproval() {
+      const apiBase = document.getElementById('apiBase').value;
+      const token = document.getElementById('adminToken').value;
+      
+      if (!token) {
+        log('Please enter your admin token', 'error');
+        return;
+      }
+      
+      if (pendingOrders.length === 0) {
+        log('No pending orders. Fetch pending orders first.', 'warning');
+        return;
+      }
+      
+      const order = pendingOrders[0];
+      log(`\\nApproving order: ${order.orderNumber}`, 'info');
+      log(`Order ID: ${order._id}`, 'info');
+      
+      try {
+        log('Sending approval request...', 'info');
+        
+        const response = await fetch(`${apiBase}/api/admin/orders/${order._id}/approve-hub-delivery`, {
+          method: 'PATCH',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        log(`Response status: ${response.status}`, 'info');
+        
+        const data = await response.json();
+        
+        if (data.success) {
+          log('\\n✅ ORDER APPROVED SUCCESSFULLY!', 'success');
+          log(`Order Number: ${data.order.orderNumber}`, 'success');
+          log(`Status: ${data.order.status}`, 'success');
+          log(`From Hub: ${data.order.fromHub}`, 'success');
+          log(`To Hub: ${data.order.toHub}`, 'success');
+          log(`OTP: ${data.order.otp}`, 'success');
+          log(`Customer Email: ${data.order.customerEmail}`, 'success');
+          log('\\n📧 OTP has been sent to customer email', 'info');
+          
+          // Refresh pending orders
+          setTimeout(() => {
+            log('\\nRefreshing pending orders...', 'info');
+            getPendingOrders();
+          }, 2000);
+        } else {
+          log(`\\n❌ APPROVAL FAILED`, 'error');
+          log(`Error: ${data.error}`, 'error');
+        }
+      } catch (error) {
+        log(`\\n❌ Network error: ${error.message}`, 'error');
+        console.error('Full error:', error);
+      }
+    }
+    
+    // Auto-detect token from localStorage
+    window.addEventListener('DOMContentLoaded', () => {
+      log('Order Approval Tester loaded', 'success');
+      log('Enter your admin token to begin testing', 'info');
+      log('\\nTip: You can get your token from localStorage in the browser console:', 'info');
+      log('localStorage.getItem("authToken") or similar', 'info');
+    });
+  </script>
+</body>
+</html>
